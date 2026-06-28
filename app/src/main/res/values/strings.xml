@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SSH Client</string>
+    <string name="headline">SSH Client for Android</string>
+    <string name="subheadline">Initial release APK is now available in the release directory.</string>
+</resources>
