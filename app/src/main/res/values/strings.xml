@@ -1,5 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SSH Client</string>
-    <string name="headline">SSH Client for Android</string>
-    <string name="subheadline">Initial release APK is now available in the release directory.</string>
+    <string name="hint_host">Host (e.g. example.com)</string>
+    <string name="hint_port">Port</string>
+    <string name="hint_user">Username</string>
+    <string name="hint_password">Password</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_send">Send</string>
+    <string name="hint_command">Type command and press Send</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_error">Error</string>
+    <string name="welcome_banner">SSH Client for Android\nEnter connection details above and press Connect.</string>
 </resources>

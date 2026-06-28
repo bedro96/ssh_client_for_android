@@ -20,7 +20,32 @@ if [[ -z "${BUILD_TOOLS_DIR}" ]]; then
   exit 1
 fi
 
-PLATFORM_JAR="${SDK_ROOT}/platforms/android-34/android.jar"
+# Pick the newest installed android-NN platform jar (NN is a pure integer so
+# extensions like android-34-ext10 are ignored).
+PLATFORM_JAR=""
+for candidate in $(ls -1 "${SDK_ROOT}/platforms" 2>/dev/null \
+    | grep -E '^android-[0-9]+$' \
+    | sed 's/^android-//' \
+    | sort -n -r); do
+  if [[ -f "${SDK_ROOT}/platforms/android-${candidate}/android.jar" ]]; then
+    PLATFORM_JAR="${SDK_ROOT}/platforms/android-${candidate}/android.jar"
+    PLATFORM_API="${candidate}"
+    break
+  fi
+done
+if [[ -z "${PLATFORM_JAR}" ]]; then
+  PLATFORM_JAR="${SDK_ROOT}/platforms/android-34/android.jar"
+  PLATFORM_API="34"
+fi
+TARGET_SDK="${PLATFORM_API:-34}"
+MIN_SDK="24"
+
+# Third-party dependencies bundled into the APK.
+JSCH_VERSION="${JSCH_VERSION:-0.2.21}"
+JSCH_SHA256="2330df0841be84eefa7c6ba4b5a2c98faa153855c80a5af418fdedacc2a4bc5b"
+JSCH_URL="https://repo1.maven.org/maven2/com/github/mwiede/jsch/${JSCH_VERSION}/jsch-${JSCH_VERSION}.jar"
+LIBS_DIR="${ROOT_DIR}/app/libs"
+JSCH_JAR="${LIBS_DIR}/jsch-${JSCH_VERSION}.jar"
 AAPT2="${BUILD_TOOLS_DIR}/aapt2"
 D8="${BUILD_TOOLS_DIR}/d8"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
@@ -61,15 +86,25 @@ if [[ ! -f "${PLATFORM_JAR}" ]]; then
   exit 1
 fi
 
-mkdir -p "${RELEASE_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex"
+mkdir -p "${RELEASE_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex" "${LIBS_DIR}"
+
+if [[ ! -f "${JSCH_JAR}" ]]; then
+  echo "Downloading ${JSCH_URL}"
+  curl -fsSL --retry 3 -o "${JSCH_JAR}" "${JSCH_URL}"
+fi
+ACTUAL_SHA="$(sha256sum "${JSCH_JAR}" | awk '{print $1}')"
+if [[ "${ACTUAL_SHA}" != "${JSCH_SHA256}" ]]; then
+  echo "Checksum mismatch for JSch jar: expected ${JSCH_SHA256}, got ${ACTUAL_SHA}" >&2
+  exit 1
+fi
 
 "${AAPT2}" compile --dir "${ROOT_DIR}/app/src/main/res" -o "${BUILD_DIR}/resources.zip"
 "${AAPT2}" link \
   -I "${PLATFORM_JAR}" \
   --manifest "${ROOT_DIR}/app/src/main/AndroidManifest.xml" \
   --java "${BUILD_DIR}/generated" \
-  --min-sdk-version 26 \
-  --target-sdk-version 34 \
+  --min-sdk-version "${MIN_SDK}" \
+  --target-sdk-version "${TARGET_SDK}" \
   --auto-add-overlay \
   -o "${BUILD_DIR}/base.apk" \
   "${BUILD_DIR}/resources.zip"
@@ -79,13 +114,19 @@ javac \
   -target 8 \
   -encoding UTF-8 \
   -bootclasspath "${PLATFORM_JAR}" \
+  -classpath "${JSCH_JAR}" \
   -d "${BUILD_DIR}/classes" \
   $(find "${ROOT_DIR}/app/src/main/java" "${BUILD_DIR}/generated" -name '*.java' | sort)
 
-"${D8}" --lib "${PLATFORM_JAR}" --output "${BUILD_DIR}/dex" $(find "${BUILD_DIR}/classes" -name '*.class' | sort)
+"${D8}" \
+  --min-api "${MIN_SDK}" \
+  --lib "${PLATFORM_JAR}" \
+  --output "${BUILD_DIR}/dex" \
+  $(find "${BUILD_DIR}/classes" -name '*.class' | sort) \
+  "${JSCH_JAR}"
 (
   cd "${BUILD_DIR}/dex"
-  zip -qj "${BUILD_DIR}/base.apk" classes.dex
+  zip -qj "${BUILD_DIR}/base.apk" *.dex
 )
 
 "${ZIPALIGN}" -f -p 4 "${BUILD_DIR}/base.apk" "${BUILD_DIR}/aligned.apk"

@@ -1,18 +1,75 @@
 # SSH Client for Android
 
-This repository now includes an initial Android app shell and a checked-in release APK at `/release/app-release.apk`.
+A small, working SSH client app for Android. The app opens an interactive
+remote shell over SSH (password authentication) and lets you stream output and
+type commands from your phone or tablet.
 
-## Current contents
+The signed initial release APK is at `release/app-release.apk` and is built
+without Gradle — it uses the Android SDK command-line tools directly (see
+`build-release.sh`).
 
-- `app/src/main/` — minimal Android application source
-- `build-release.sh` — offline build script that uses the local Android SDK command-line tools
-- `release/app-release.apk` — signed initial release artifact
+## Features
+
+- Password-authenticated SSH login (host, port, username, password)
+- Interactive remote shell channel (PTY `xterm`) with live streaming output
+- Send arbitrary commands from a text field (Enter / Send)
+- Monospaced, selectable, auto-scrolling terminal view with bounded buffer
+- Adaptive layout: phone layout (`res/layout/`) and a wider tablet layout
+  (`res/layout-sw600dp/`) for modern handheld and high-resolution tablet
+  Samsung devices
+- `minSdkVersion` 24 (Android 7.0+) — covers every supported Samsung device
+- `targetSdkVersion` follows the newest installed Android platform jar (35/36
+  on a fully patched SDK), so the APK is current for the latest Samsung
+  Galaxy S/Tab devices on Android 14/15/16
+
+## Install on a Samsung device
+
+1. Copy `release/app-release.apk` to the device (USB, Drive, etc.).
+2. In **Settings → Apps → Special access → Install unknown apps**, allow your
+   file manager / browser to install APKs.
+3. Open the APK and tap **Install**. The launcher entry is **SSH Client**.
+
+The APK is signed with a freshly generated release key — it installs cleanly,
+but if you reinstall after rebuilding you may need to uninstall the previous
+copy first because the signing certificate changes per build (no keystore is
+committed to the repository).
 
 ## Rebuild the APK
 
 ```bash
-cd <repository-root>
 ./build-release.sh
 ```
 
-The script expects `ANDROID_SDK_ROOT` or `ANDROID_HOME` to point at an Android SDK installation with platform `android-34` and build-tools `34.0.0` or newer installed. It auto-selects the newest installed build-tools version.
+The script:
+
+- requires `ANDROID_SDK_ROOT` or `ANDROID_HOME` to point at an Android SDK
+  with at least one `platforms/android-NN/android.jar` and modern
+  `build-tools/` installed (34.0.0 or newer)
+- auto-selects the newest installed build-tools directory and platform jar
+- downloads and verifies (SHA-256) the
+  [`com.github.mwiede:jsch`](https://github.com/mwiede/jsch) SSH library
+  jar into `app/libs/`
+- compiles Java with `javac`, dexes via `d8`, packages with `aapt2`,
+  zip-aligns and signs with `apksigner`
+- writes the result to `release/app-release.apk`
+
+Override the JSch version (and update its checksum in `build-release.sh`) if
+you want to ship a newer SSH library.
+
+## Source layout
+
+- `app/src/main/AndroidManifest.xml` — INTERNET permission, screen-size
+  support, launcher activity
+- `app/src/main/java/com/bedro96/sshclient/MainActivity.java` — UI + SSH
+  session lifecycle (background `ExecutorService`, reader thread for the
+  remote stdout, command writer)
+- `app/src/main/res/layout/activity_main.xml` — phone layout
+- `app/src/main/res/layout-sw600dp/activity_main.xml` — tablet layout
+- `build-release.sh` — offline build/sign pipeline
+
+## Caveats of this initial release
+
+- Password auth only (no key auth UI yet)
+- Trust-on-first-use host keys (`StrictHostKeyChecking=no`) — this is an
+  initial client, not a hardened production tool
+- Single concurrent session
