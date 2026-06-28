@@ -45,7 +45,8 @@
             android:textSize="18sp"
             android:inputType="text"
             android:singleLine="true"
-            android:imeOptions="actionNext" />
+            android:imeOptions="actionNext"
+            android:autofillHints="username" />
 
         <EditText
             android:id="@+id/editPassword"
@@ -57,7 +58,8 @@
             android:textSize="18sp"
             android:inputType="textPassword"
             android:singleLine="true"
-            android:imeOptions="actionDone" />
+            android:imeOptions="actionDone"
+            android:autofillHints="password" />
     </LinearLayout>
 
     <LinearLayout
