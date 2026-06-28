@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="terminal_bg">#FF101418</color>
+    <color name="terminal_fg">#FFD0F0C0</color>
+    <color name="status_bar">#FF263238</color>
+    <color name="status_text">#FFFFFFFF</color>
+</resources>

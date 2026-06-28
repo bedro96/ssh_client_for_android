@@ -3,10 +3,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="24dp"
     android:fitsSystemWindows="true">
 
-    <!-- Connection inputs -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -18,6 +17,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="3"
             android:hint="@string/hint_host"
+            android:textSize="18sp"
             android:inputType="textUri"
             android:imeOptions="actionNext"
             android:singleLine="true" />
@@ -27,26 +27,22 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="12dp"
             android:hint="@string/hint_port"
             android:text="22"
+            android:textSize="18sp"
             android:inputType="number"
             android:singleLine="true"
             android:imeOptions="actionNext" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:orientation="horizontal">
 
         <EditText
             android:id="@+id/editUser"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
+            android:layout_weight="2"
+            android:layout_marginStart="12dp"
             android:hint="@string/hint_user"
+            android:textSize="18sp"
             android:inputType="text"
             android:singleLine="true"
             android:imeOptions="actionNext"
@@ -56,9 +52,10 @@
             android:id="@+id/editPassword"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
+            android:layout_weight="2"
+            android:layout_marginStart="12dp"
             android:hint="@string/hint_password"
+            android:textSize="18sp"
             android:inputType="textPassword"
             android:singleLine="true"
             android:imeOptions="actionDone"
@@ -68,7 +65,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="12dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -76,6 +73,7 @@
             android:id="@+id/btnConnect"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:textSize="16sp"
             android:text="@string/action_connect" />
 
         <TextView
@@ -83,24 +81,24 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:padding="8dp"
+            android:layout_marginStart="16dp"
+            android:padding="12dp"
             android:background="@color/status_bar"
             android:textColor="@color/status_text"
+            android:textSize="16sp"
             android:text="@string/status_disconnected"
             android:singleLine="true"
             android:ellipsize="end" />
     </LinearLayout>
 
-    <!-- Terminal output -->
     <ScrollView
         android:id="@+id/scrollOutput"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="12dp"
         android:background="@color/terminal_bg"
-        android:padding="6dp"
+        android:padding="10dp"
         android:scrollbars="vertical"
         android:fillViewport="true">
 
@@ -111,15 +109,14 @@
             android:fontFamily="monospace"
             android:textIsSelectable="true"
             android:textColor="@color/terminal_fg"
-            android:textSize="13sp"
+            android:textSize="15sp"
             android:text="@string/welcome_banner" />
     </ScrollView>
 
-    <!-- Command input -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="12dp"
         android:orientation="horizontal">
 
         <EditText
@@ -129,6 +126,7 @@
             android:layout_weight="1"
             android:hint="@string/hint_command"
             android:fontFamily="monospace"
+            android:textSize="16sp"
             android:inputType="text|textNoSuggestions|textVisiblePassword"
             android:imeOptions="actionSend"
             android:singleLine="true"
@@ -138,7 +136,8 @@
             android:id="@+id/btnSend"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="12dp"
+            android:textSize="16sp"
             android:text="@string/action_send"
             android:enabled="false" />
     </LinearLayout>
