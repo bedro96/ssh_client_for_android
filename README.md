@@ -15,4 +15,4 @@ cd <repository-root>
 ./build-release.sh
 ```
 
-The script expects `ANDROID_SDK_ROOT` or `ANDROID_HOME` to point at an Android SDK installation with platform `android-34` and build-tools installed.
+The script expects `ANDROID_SDK_ROOT` or `ANDROID_HOME` to point at an Android SDK installation with platform `android-34` and build-tools `34.0.0` or newer installed. It auto-selects the newest installed build-tools version.
