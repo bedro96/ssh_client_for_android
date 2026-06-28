@@ -11,7 +11,7 @@ This repository now includes an initial Android app shell and a checked-in relea
 ## Rebuild the APK
 
 ```bash
-cd /home/runner/work/ssh_client_for_android/ssh_client_for_android
+cd <repository-root>
 ./build-release.sh
 ```
 

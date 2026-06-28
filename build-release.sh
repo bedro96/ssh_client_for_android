@@ -9,7 +9,17 @@ if [[ -z "${SDK_ROOT}" ]]; then
   exit 1
 fi
 
+if [[ ! -d "${SDK_ROOT}/build-tools" ]]; then
+  echo "Android build-tools were not found under ${SDK_ROOT}." >&2
+  exit 1
+fi
+
 BUILD_TOOLS_DIR="$(find "${SDK_ROOT}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+if [[ -z "${BUILD_TOOLS_DIR}" ]]; then
+  echo "No Android build-tools directory is available under ${SDK_ROOT}." >&2
+  exit 1
+fi
+
 PLATFORM_JAR="${SDK_ROOT}/platforms/android-34/android.jar"
 AAPT2="${BUILD_TOOLS_DIR}/aapt2"
 D8="${BUILD_TOOLS_DIR}/d8"
@@ -18,11 +28,38 @@ APKSIGNER="${BUILD_TOOLS_DIR}/apksigner"
 BUILD_DIR="$(mktemp -d /tmp/ssh_client_for_android-build.XXXXXX)"
 RELEASE_DIR="${ROOT_DIR}/release"
 KEYSTORE_PATH="${BUILD_DIR}/release.keystore"
+KEYSTORE_PASSWORD="${RELEASE_KEYSTORE_PASSWORD:-$(python - <<'PY'
+import secrets
+import string
+alphabet = string.ascii_letters + string.digits
+print(''.join(secrets.choice(alphabet) for _ in range(32)))
+PY
+)}"
+KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-${KEYSTORE_PASSWORD}}"
+
+require_file() {
+  local path="$1"
+  local label="$2"
+  if [[ ! -x "${path}" ]]; then
+    echo "Required ${label} was not found or is not executable: ${path}" >&2
+    exit 1
+  fi
+}
 
 cleanup() {
   rm -rf "${BUILD_DIR}"
 }
 trap cleanup EXIT
+
+require_file "${AAPT2}" "aapt2"
+require_file "${D8}" "d8"
+require_file "${ZIPALIGN}" "zipalign"
+require_file "${APKSIGNER}" "apksigner"
+
+if [[ ! -f "${PLATFORM_JAR}" ]]; then
+  echo "Required Android platform jar is missing: ${PLATFORM_JAR}" >&2
+  exit 1
+fi
 
 mkdir -p "${RELEASE_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex"
 
@@ -54,8 +91,8 @@ javac \
 "${ZIPALIGN}" -f -p 4 "${BUILD_DIR}/base.apk" "${BUILD_DIR}/aligned.apk"
 keytool -genkeypair \
   -keystore "${KEYSTORE_PATH}" \
-  -storepass android \
-  -keypass android \
+  -storepass "${KEYSTORE_PASSWORD}" \
+  -keypass "${KEY_PASSWORD}" \
   -alias androidreleasekey \
   -dname "CN=Android Release,O=bedro96,C=US" \
   -keyalg RSA \
@@ -63,8 +100,8 @@ keytool -genkeypair \
   -validity 10000 >/dev/null 2>&1
 "${APKSIGNER}" sign \
   --ks "${KEYSTORE_PATH}" \
-  --ks-pass pass:android \
-  --key-pass pass:android \
+  --ks-pass pass:"${KEYSTORE_PASSWORD}" \
+  --key-pass pass:"${KEY_PASSWORD}" \
   --ks-key-alias androidreleasekey \
   --v4-signing-enabled false \
   --out "${RELEASE_DIR}/app-release.apk" \
