@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<HorizontalScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/keyToolbar"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:visibility="gone"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button android:id="@+id/keyEsc" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_esc" />
+        <Button android:id="@+id/keyTab" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_tab" />
+        <Button android:id="@+id/keyCtrlC" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_ctrl_c" />
+        <Button android:id="@+id/keyCtrlD" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_ctrl_d" />
+        <Button android:id="@+id/keyUp" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_up" />
+        <Button android:id="@+id/keyDown" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_down" />
+        <Button android:id="@+id/keyLeft" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_left" />
+        <Button android:id="@+id/keyRight" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_right" />
+        <Button android:id="@+id/keyCtrlA" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_ctrl_a" />
+        <Button android:id="@+id/keyCtrlE" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_ctrl_e" />
+        <Button android:id="@+id/keyCtrlB" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_ctrl_b" />
+        <Button android:id="@+id/keyCtrlZ" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_ctrl_z" />
+        <Button android:id="@+id/keyFontUp" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_font_up" />
+        <Button android:id="@+id/keyFontDown" style="?android:attr/buttonStyleSmall" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/key_font_down" />
+    </LinearLayout>
+</HorizontalScrollView>

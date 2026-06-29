@@ -6,6 +6,34 @@
     android:padding="12dp"
     android:fitsSystemWindows="true">
 
+    <!-- Saved profiles -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <Spinner
+            android:id="@+id/spinnerProfiles"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/btnSave"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/action_save" />
+
+        <Button
+            android:id="@+id/btnDelete"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/action_delete" />
+    </LinearLayout>
+
     <!-- Connection inputs -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -65,6 +93,7 @@
             android:autofillHints="password" />
     </LinearLayout>
 
+    <!-- Identity file + actions -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -73,26 +102,45 @@
         android:gravity="center_vertical">
 
         <Button
+            android:id="@+id/btnImportKey"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/action_import_key" />
+
+        <TextView
+            android:id="@+id/txtIdentity"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/identity_none"
+            android:singleLine="true"
+            android:ellipsize="middle" />
+
+        <Button
             android:id="@+id/btnConnect"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/action_connect" />
-
-        <TextView
-            android:id="@+id/txtStatus"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:padding="8dp"
-            android:background="@color/status_bar"
-            android:textColor="@color/status_text"
-            android:text="@string/status_disconnected"
-            android:singleLine="true"
-            android:ellipsize="end" />
     </LinearLayout>
 
-    <!-- Terminal output -->
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:padding="8dp"
+        android:background="@color/status_bar"
+        android:textColor="@color/status_text"
+        android:text="@string/status_disconnected"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <!-- Special-key row -->
+    <include layout="@layout/key_toolbar" />
+
+    <!-- Terminal -->
     <ScrollView
         android:id="@+id/scrollOutput"
         android:layout_width="match_parent"
@@ -104,42 +152,18 @@
         android:scrollbars="vertical"
         android:fillViewport="true">
 
-        <TextView
+        <EditText
             android:id="@+id/txtOutput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="@null"
             android:fontFamily="monospace"
-            android:textIsSelectable="true"
             android:textColor="@color/terminal_fg"
             android:textSize="13sp"
+            android:gravity="top"
+            android:inputType="textMultiLine|textNoSuggestions|textVisiblePassword"
+            android:imeOptions="actionNone|flagNoExtractUi"
+            android:enabled="false"
             android:text="@string/welcome_banner" />
     </ScrollView>
-
-    <!-- Command input -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <EditText
-            android:id="@+id/editCommand"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/hint_command"
-            android:fontFamily="monospace"
-            android:inputType="text|textNoSuggestions|textVisiblePassword"
-            android:imeOptions="actionSend"
-            android:singleLine="true"
-            android:enabled="false" />
-
-        <Button
-            android:id="@+id/btnSend"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:text="@string/action_send"
-            android:enabled="false" />
-    </LinearLayout>
 </LinearLayout>
