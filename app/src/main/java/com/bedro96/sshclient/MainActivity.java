@@ -251,10 +251,14 @@ public final class MainActivity extends Activity {
         super.onActivityResult(req, res, data);
         if (req == REQ_IMPORT_KEY && res == RESULT_OK && data != null && data.getData() != null) {
             Uri uri = data.getData();
+            if (!"content".equals(uri.getScheme())) {
+                Toast.makeText(this, "Unsupported file source", Toast.LENGTH_SHORT).show();
+                return;
+            }
             try {
                 File dir = new File(getFilesDir(), KEY_DIR);
                 if (!dir.exists()) { dir.mkdirs(); }
-                String name = "id_" + System.currentTimeMillis();
+                String name = "id_" + java.util.UUID.randomUUID();
                 File dest = new File(dir, name);
                 try (InputStream in = getContentResolver().openInputStream(uri);
                      FileOutputStream out = new FileOutputStream(dest)) {
@@ -404,10 +408,11 @@ public final class MainActivity extends Activity {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (suppressTextWatcher) { return; }
                 if (count > before) {
+                    // Characters typed or pasted: forward them to the remote shell.
                     String typed = s.subSequence(start + before, start + count).toString();
                     sendRaw(typed.getBytes(UTF8));
                 } else if (before > count) {
-                    // A delete/backspace: forward DEL so the remote handles it.
+                    // A delete/backspace: forward one DEL so the remote handles it.
                     sendRaw(new byte[] {0x7f});
                 }
                 // Remote echoes everything; revert local edit to the server buffer.
