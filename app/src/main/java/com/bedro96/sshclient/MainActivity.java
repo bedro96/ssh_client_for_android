@@ -349,7 +349,7 @@ public final class MainActivity extends Activity {
                         }
                     });
                 } catch (final Exception e) {
-                    final String detail = describeConnectError(e);
+                    final String detail = describeConnectError(e, idFile);
                     ui.post(new Runnable() {
                         @Override public void run() {
                             setStatus(getString(R.string.status_error) + ": " + detail);
@@ -365,12 +365,12 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private String describeConnectError(Exception e) {
+    private String describeConnectError(Exception e, String idFile) {
         String msg = e.getMessage();
         if (msg == null) { msg = e.toString(); }
-        String lower = msg.toLowerCase();
-        if (lower.contains("auth fail") || lower.contains("auth cancel")) {
-            if (identityPath != null) {
+        String lowerCaseMsg = msg.toLowerCase();
+        if (lowerCaseMsg.contains("auth fail") || lowerCaseMsg.contains("auth cancel")) {
+            if (!TextUtils.isEmpty(idFile)) {
                 return msg + " — the server rejected the identity key. Check that the"
                         + " key is in the server's authorized_keys, and if the key is"
                         + " passphrase-protected enter the passphrase in the password"
