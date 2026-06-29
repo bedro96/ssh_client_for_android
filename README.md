@@ -10,10 +10,15 @@ without Gradle — it uses the Android SDK command-line tools directly (see
 
 ## Features
 
-- Password-authenticated SSH login (host, port, username, password)
+- Authentication via password and/or imported identity (private key) file
+- Saved host profiles (name, host, port, username, password, identity file)
+  selectable from a dropdown for fast reconnect; Save/Delete buttons
+- Import an identity file from device storage into the app (system file picker)
 - Interactive remote shell channel (PTY `xterm`) with live streaming output
-- Send arbitrary commands from a text field (Enter / Send)
-- Monospaced, selectable, auto-scrolling terminal view with bounded buffer
+- Single terminal area — keystrokes are streamed straight to the remote shell
+  (no separate command field); remote echo drives the display
+- Special-key toolbar: ESC, TAB, Ctrl+C, Ctrl+D, ▲ ▼ ◀ ▶, Ctrl+A, Ctrl+E,
+  Ctrl+B, Ctrl+Z, and font size A+/A-
 - Adaptive layout: phone layout (`res/layout/`) and a wider tablet layout
   (`res/layout-sw600dp/`) for modern handheld and high-resolution tablet
   Samsung devices
@@ -67,9 +72,10 @@ you want to ship a newer SSH library.
 - `app/src/main/res/layout-sw600dp/activity_main.xml` — tablet layout
 - `build-release.sh` — offline build/sign pipeline
 
-## Caveats of this initial release
+## Caveats of this release
 
-- Password auth only (no key auth UI yet)
+- Profiles (including passwords) stored in plain `SharedPreferences`; identity
+  files are copied into app-private storage (`filesDir/identity_keys/`)
 - Trust-on-first-use host keys (`StrictHostKeyChecking=no`) — this is an
   initial client, not a hardened production tool
 - Single concurrent session
