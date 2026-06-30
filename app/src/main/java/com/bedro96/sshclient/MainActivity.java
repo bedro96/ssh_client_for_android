@@ -258,6 +258,7 @@ public final class MainActivity extends Activity {
             try {
                 File dir = new File(getFilesDir(), KEY_DIR);
                 if (!dir.exists()) { dir.mkdirs(); }
+                restrictToOwner(dir);
                 String name = "id_" + java.util.UUID.randomUUID();
                 File dest = new File(dir, name);
                 try (InputStream in = getContentResolver().openInputStream(uri);
@@ -266,12 +267,35 @@ public final class MainActivity extends Activity {
                     int n;
                     while ((n = in.read(buf)) > 0) { out.write(buf, 0, n); }
                 }
+                // Mimic `ssh -i`, which requires the private key file to be
+                // readable only by its owner (mode 0600); a world/group readable
+                // key is otherwise rejected as an unprotected private key.
+                restrictToOwner(dest);
                 identityPath = dest.getAbsolutePath();
                 txtIdentity.setText(dest.getName());
                 Toast.makeText(this, "Identity file imported", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
                 Toast.makeText(this, "Import failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
+        }
+    }
+
+    /**
+     * Tightens a file or directory so only the owner can read and write it,
+     * matching the 0600/0700 permissions OpenSSH expects for identity files
+     * passed via {@code ssh -i}. Best-effort: failures are ignored because
+     * app-private storage is already restricted to this app's UID.
+     */
+    private static void restrictToOwner(File f) {
+        // Drop all permissions for group/other, then grant owner-only access.
+        f.setReadable(false, false);
+        f.setWritable(false, false);
+        f.setExecutable(false, false);
+        f.setReadable(true, true);
+        f.setWritable(true, true);
+        if (f.isDirectory()) {
+            // Directories need the owner execute bit to be traversable.
+            f.setExecutable(true, true);
         }
     }
 
