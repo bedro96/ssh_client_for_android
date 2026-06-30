@@ -304,11 +304,24 @@ public final class MainActivity extends Activity {
             @Override public void run() {
                 try {
                     JSch jsch = new JSch();
-                    if (!TextUtils.isEmpty(idFile)) { jsch.addIdentity(idFile); }
+                    if (!TextUtils.isEmpty(idFile)) {
+                        // The entered password doubles as the key passphrase so that
+                        // passphrase-protected private keys can be decrypted. JSch
+                        // ignores the passphrase for keys that are not encrypted.
+                        if (!TextUtils.isEmpty(password)) {
+                            jsch.addIdentity(idFile, password);
+                        } else {
+                            jsch.addIdentity(idFile);
+                        }
+                    }
                     Session s = jsch.getSession(user, host, port);
                     if (!TextUtils.isEmpty(password)) { s.setPassword(password); }
                     Properties config = new Properties();
                     config.put("StrictHostKeyChecking", "no");
+                    // Try the imported key first, then fall back to password-based
+                    // methods so a publickey failure does not abort the login.
+                    config.put("PreferredAuthentications",
+                            "publickey,keyboard-interactive,password");
                     s.setConfig(config);
                     s.setServerAliveInterval(30_000);
                     s.connect(15_000);
@@ -336,10 +349,11 @@ public final class MainActivity extends Activity {
                         }
                     });
                 } catch (final Exception e) {
+                    final String detail = describeConnectError(e, idFile);
                     ui.post(new Runnable() {
                         @Override public void run() {
-                            setStatus(getString(R.string.status_error) + ": " + e.getMessage());
-                            appendOutput("\n[connection failed] " + e.getMessage() + "\n");
+                            setStatus(getString(R.string.status_error) + ": " + detail);
+                            appendOutput("\n[connection failed] " + detail + "\n");
                             setConnectionInputsEnabled(true);
                             btnConnect.setEnabled(true);
                             btnConnect.setText(R.string.action_connect);
@@ -349,6 +363,22 @@ public final class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    private String describeConnectError(Exception e, String idFile) {
+        String msg = e.getMessage();
+        if (msg == null) { msg = e.toString(); }
+        String lowerCaseMsg = msg.toLowerCase();
+        if (lowerCaseMsg.contains("auth fail") || lowerCaseMsg.contains("auth cancel")) {
+            if (!TextUtils.isEmpty(idFile)) {
+                return msg + " — the server rejected the identity key. Check that the"
+                        + " key is in the server's authorized_keys, and if the key is"
+                        + " passphrase-protected enter the passphrase in the password"
+                        + " field.";
+            }
+            return msg + " — check the username and password.";
+        }
+        return msg;
     }
 
     private void startReader(final InputStream in) {
