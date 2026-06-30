@@ -22,6 +22,7 @@ import android.widget.Toast;
 
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 
 import org.json.JSONArray;
@@ -305,13 +306,18 @@ public final class MainActivity extends Activity {
                 try {
                     JSch jsch = new JSch();
                     if (!TextUtils.isEmpty(idFile)) {
-                        // The entered password doubles as the key passphrase so that
-                        // passphrase-protected private keys can be decrypted. JSch
-                        // ignores the passphrase for keys that are not encrypted.
-                        if (!TextUtils.isEmpty(password)) {
-                            jsch.addIdentity(idFile, password);
-                        } else {
+                        try {
+                            // Always load the key first without a passphrase so a
+                            // login password does not interfere with publickey auth.
                             jsch.addIdentity(idFile);
+                        } catch (JSchException keyError) {
+                            // If the key is encrypted, retry with the entered value
+                            // as passphrase.
+                            if (!TextUtils.isEmpty(password)) {
+                                jsch.addIdentity(idFile, password);
+                            } else {
+                                throw keyError;
+                            }
                         }
                     }
                     Session s = jsch.getSession(user, host, port);
