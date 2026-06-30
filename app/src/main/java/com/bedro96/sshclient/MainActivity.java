@@ -314,7 +314,7 @@ public final class MainActivity extends Activity {
                                 if (!TextUtils.isEmpty(password)) {
                                     jsch.addIdentity(idFile, password);
                                 } else {
-                                    throw new JSchException("Identity key is encrypted");
+                                    throw new JSchException("Identity key is encrypted; enter its passphrase in the password field");
                                 }
                             } else {
                                 // Load unencrypted keys without using the login
