@@ -23,7 +23,6 @@ import android.widget.Toast;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
-import com.jcraft.jsch.KeyPair;
 import com.jcraft.jsch.Session;
 
 import org.json.JSONArray;
@@ -307,22 +306,15 @@ public final class MainActivity extends Activity {
                 try {
                     JSch jsch = new JSch();
                     if (!TextUtils.isEmpty(idFile)) {
-                        KeyPair key = null;
                         try {
-                            key = KeyPair.load(jsch, idFile);
-                            if (key.isEncrypted()) {
-                                if (!TextUtils.isEmpty(password)) {
-                                    jsch.addIdentity(idFile, password);
-                                } else {
-                                    throw new JSchException("Identity key is encrypted; enter its passphrase in the password field");
-                                }
-                            } else {
-                                // Load unencrypted keys without using the login
-                                // password so publickey auth is not overridden.
-                                jsch.addIdentity(idFile);
+                            // Load unencrypted keys without using the login password
+                            // so publickey auth is not overridden.
+                            jsch.addIdentity(idFile);
+                        } catch (JSchException keyError) {
+                            if (!shouldRetryIdentityWithPassword(keyError, idFile, password)) {
+                                throw keyError;
                             }
-                        } finally {
-                            if (key != null) { key.dispose(); }
+                            jsch.addIdentity(idFile, password);
                         }
                     }
                     Session s = jsch.getSession(user, host, port);
@@ -390,6 +382,18 @@ public final class MainActivity extends Activity {
             return msg + " — check the username and password.";
         }
         return msg;
+    }
+
+    private boolean shouldRetryIdentityWithPassword(JSchException keyError, String idFile, String password) {
+        if (TextUtils.isEmpty(password)) { return false; }
+        File keyFile = new File(idFile);
+        if (!keyFile.exists() || !keyFile.isFile()) { return false; }
+        String msg = keyError.getMessage();
+        if (msg == null) { return false; }
+        String lower = msg.toLowerCase();
+        return lower.contains("passphrase")
+                || lower.contains("encrypted")
+                || lower.contains("privatekey");
     }
 
     private void startReader(final InputStream in) {
