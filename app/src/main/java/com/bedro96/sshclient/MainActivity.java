@@ -23,6 +23,7 @@ import android.widget.Toast;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.KeyPair;
 import com.jcraft.jsch.Session;
 
 import org.json.JSONArray;
@@ -306,18 +307,22 @@ public final class MainActivity extends Activity {
                 try {
                     JSch jsch = new JSch();
                     if (!TextUtils.isEmpty(idFile)) {
+                        KeyPair key = null;
                         try {
-                            // Always load the key first without a passphrase so a
-                            // login password does not interfere with publickey auth.
-                            jsch.addIdentity(idFile);
-                        } catch (JSchException keyError) {
-                            // If the key is encrypted, retry with the entered value
-                            // as passphrase.
-                            if (!TextUtils.isEmpty(password)) {
-                                jsch.addIdentity(idFile, password);
+                            key = KeyPair.load(jsch, idFile);
+                            if (key.isEncrypted()) {
+                                if (!TextUtils.isEmpty(password)) {
+                                    jsch.addIdentity(idFile, password);
+                                } else {
+                                    throw new JSchException("Identity key is encrypted");
+                                }
                             } else {
-                                throw keyError;
+                                // Load unencrypted keys without using the login
+                                // password so publickey auth is not overridden.
+                                jsch.addIdentity(idFile);
                             }
+                        } finally {
+                            if (key != null) { key.dispose(); }
                         }
                     }
                     Session s = jsch.getSession(user, host, port);
