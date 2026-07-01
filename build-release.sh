@@ -44,8 +44,16 @@ MIN_SDK="24"
 JSCH_VERSION="${JSCH_VERSION:-0.2.21}"
 JSCH_SHA256="2330df0841be84eefa7c6ba4b5a2c98faa153855c80a5af418fdedacc2a4bc5b"
 JSCH_URL="https://repo1.maven.org/maven2/com/github/mwiede/jsch/${JSCH_VERSION}/jsch-${JSCH_VERSION}.jar"
+# BouncyCastle provides the Ed25519/EdDSA implementation jsch uses on Android
+# (com.jcraft.jsch.bc.*). Without it, id_ed25519 identity keys fail with
+# "Auth fail for methods 'publickey'" because Android drops jsch's JDK15+
+# multi-release EdDSA classes.
+BCPROV_VERSION="${BCPROV_VERSION:-1.78.1}"
+BCPROV_SHA256="add5915e6acfc6ab5836e1fd8a5e21c6488536a8c1f21f386eeb3bf280b702d7"
+BCPROV_URL="https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk18on/${BCPROV_VERSION}/bcprov-jdk18on-${BCPROV_VERSION}.jar"
 LIBS_DIR="${ROOT_DIR}/app/libs"
 JSCH_JAR="${LIBS_DIR}/jsch-${JSCH_VERSION}.jar"
+BCPROV_JAR="${LIBS_DIR}/bcprov-jdk18on-${BCPROV_VERSION}.jar"
 AAPT2="${BUILD_TOOLS_DIR}/aapt2"
 D8="${BUILD_TOOLS_DIR}/d8"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
@@ -98,6 +106,19 @@ if [[ "${ACTUAL_SHA}" != "${JSCH_SHA256}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${BCPROV_JAR}" ]]; then
+  echo "Downloading ${BCPROV_URL}"
+  curl -fsSL --retry 3 -o "${BCPROV_JAR}" "${BCPROV_URL}"
+fi
+ACTUAL_BCPROV_SHA="$(sha256sum "${BCPROV_JAR}" | awk '{print $1}')"
+if [[ "${ACTUAL_BCPROV_SHA}" != "${BCPROV_SHA256}" ]]; then
+  echo "Checksum mismatch for BouncyCastle jar: expected ${BCPROV_SHA256}, got ${ACTUAL_BCPROV_SHA}" >&2
+  exit 1
+fi
+
+# Classpath of bundled jars, shared by javac and d8.
+DEP_CLASSPATH="${JSCH_JAR}:${BCPROV_JAR}"
+
 "${AAPT2}" compile --dir "${ROOT_DIR}/app/src/main/res" -o "${BUILD_DIR}/resources.zip"
 "${AAPT2}" link \
   -I "${PLATFORM_JAR}" \
@@ -114,7 +135,7 @@ javac \
   -target 8 \
   -encoding UTF-8 \
   -bootclasspath "${PLATFORM_JAR}" \
-  -classpath "${JSCH_JAR}" \
+  -classpath "${DEP_CLASSPATH}" \
   -d "${BUILD_DIR}/classes" \
   $(find "${ROOT_DIR}/app/src/main/java" "${BUILD_DIR}/generated" -name '*.java' | sort)
 
@@ -123,7 +144,8 @@ javac \
   --lib "${PLATFORM_JAR}" \
   --output "${BUILD_DIR}/dex" \
   $(find "${BUILD_DIR}/classes" -name '*.class' | sort) \
-  "${JSCH_JAR}"
+  "${JSCH_JAR}" \
+  "${BCPROV_JAR}"
 (
   cd "${BUILD_DIR}/dex"
   zip -qj "${BUILD_DIR}/base.apk" *.dex

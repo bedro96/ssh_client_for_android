@@ -327,6 +327,10 @@ public final class MainActivity extends Activity {
         io.submit(new Runnable() {
             @Override public void run() {
                 try {
+                    // Ed25519 identity keys (id_ed25519) only work on Android via
+                    // the Bouncy Castle EdDSA classes; the JDK15+ implementation
+                    // jsch prefers is stripped out by Android's dex packaging.
+                    SshKeyAuth.configureEdDSAForAndroid();
                     JSch jsch = new JSch();
                     if (!TextUtils.isEmpty(idFile)) {
                         // The entered password doubles as the key passphrase so that
@@ -395,10 +399,10 @@ public final class MainActivity extends Activity {
         String lowerCaseMsg = msg.toLowerCase();
         if (lowerCaseMsg.contains("auth fail") || lowerCaseMsg.contains("auth cancel")) {
             if (!TextUtils.isEmpty(idFile)) {
-                return msg + " — the server rejected the identity key. Check that the"
-                        + " key is in the server's authorized_keys, and if the key is"
-                        + " passphrase-protected enter the passphrase in the password"
-                        + " field.";
+                return msg + " — the server rejected the identity key. Confirm the"
+                        + " matching public key is in the server's ~/.ssh/authorized_keys."
+                        + " Leave the password field empty for a key with no passphrase;"
+                        + " only enter the passphrase there if the key is encrypted.";
             }
             return msg + " — check the username and password.";
         }
