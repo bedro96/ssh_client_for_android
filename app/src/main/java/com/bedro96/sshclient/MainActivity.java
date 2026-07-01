@@ -3,13 +3,19 @@ package com.bedro96.sshclient;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -87,7 +93,8 @@ public final class MainActivity extends Activity {
     /** True while we programmatically reset the terminal text, to suppress echo. */
     private boolean suppressTextWatcher;
     /** Authoritative terminal text as produced by the remote shell. */
-    private final StringBuilder termBuffer = new StringBuilder();
+    private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
+    private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -361,7 +368,7 @@ public final class MainActivity extends Activity {
                     s.connect(15_000);
 
                     ChannelShell ch = (ChannelShell) s.openChannel("shell");
-                    ch.setPtyType("xterm");
+                    ch.setPtyType("xterm-256color");
                     final InputStream in = ch.getInputStream();
                     final OutputStream out = ch.getOutputStream();
                     ch.connect(10_000);
@@ -492,7 +499,7 @@ public final class MainActivity extends Activity {
 
     private void restoreBuffer() {
         suppressTextWatcher = true;
-        txtOutput.setText(termBuffer.toString());
+        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
         txtOutput.setSelection(txtOutput.getText().length());
         suppressTextWatcher = false;
     }
@@ -567,9 +574,17 @@ public final class MainActivity extends Activity {
     private void setStatus(CharSequence s) { txtStatus.setText(s); }
 
     private void appendOutput(CharSequence chunk) {
-        TerminalBuffer.appendChunk(termBuffer, chunk, MAX_OUTPUT_CHARS);
+        if (chunk == null || chunk.length() == 0) { return; }
+        ansiProcessor.process(chunk, new TerminalAnsiProcessor.SegmentConsumer() {
+            @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
+                appendStyledSegment(text, bold, foregroundRgb, backgroundRgb);
+            }
+        });
+        if (termBuffer.length() > MAX_OUTPUT_CHARS) {
+            termBuffer.delete(0, termBuffer.length() - MAX_OUTPUT_CHARS);
+        }
         suppressTextWatcher = true;
-        txtOutput.setText(termBuffer.toString());
+        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
         txtOutput.setSelection(txtOutput.getText().length());
         suppressTextWatcher = false;
         scrollOutput.post(new Runnable() {
@@ -577,8 +592,47 @@ public final class MainActivity extends Activity {
         });
     }
 
+    /**
+     * Appends one ANSI-styled segment to the terminal buffer, interpreting
+     * backspace ({@code \b}) and DEL ({@code 0x7f}) as delete-previous-character
+     * so remote line editing stays aligned with the on-screen buffer.
+     */
+    private void appendStyledSegment(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
+        int runStart = termBuffer.length();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\b' || c == 0x7f) {
+                styleRange(runStart, termBuffer.length(), bold, foregroundRgb, backgroundRgb);
+                int from = TerminalBuffer.deleteStartIndex(termBuffer);
+                if (from < termBuffer.length()) {
+                    termBuffer.delete(from, termBuffer.length());
+                }
+                runStart = termBuffer.length();
+            } else {
+                termBuffer.append(c);
+            }
+        }
+        styleRange(runStart, termBuffer.length(), bold, foregroundRgb, backgroundRgb);
+    }
+
+    private void styleRange(int start, int end, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
+        if (end <= start) { return; }
+        if (bold) {
+            termBuffer.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (foregroundRgb != null) {
+            termBuffer.setSpan(new ForegroundColorSpan(0xff000000 | foregroundRgb),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (backgroundRgb != null) {
+            termBuffer.setSpan(new BackgroundColorSpan(0xff000000 | backgroundRgb),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+    }
+
     private void clearOutput() {
-        termBuffer.setLength(0);
+        termBuffer.clear();
+        ansiProcessor.reset();
         suppressTextWatcher = true;
         txtOutput.setText("");
         suppressTextWatcher = false;

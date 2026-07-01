@@ -25,13 +25,26 @@ final class TerminalBuffer {
     }
 
     private static void deletePrevious(StringBuilder buffer) {
-        if (buffer.length() == 0) { return; }
-        int from = buffer.length() - 1;
+        int from = deleteStartIndex(buffer);
+        if (from < buffer.length()) {
+            buffer.delete(from, buffer.length());
+        }
+    }
+
+    /**
+     * Index at which a "delete previous character" should start, accounting for
+     * surrogate pairs. Returns {@code buffer.length()} when there is nothing to delete.
+     * Shared with the spannable terminal buffer in {@code MainActivity}.
+     */
+    static int deleteStartIndex(CharSequence buffer) {
+        int len = buffer.length();
+        if (len == 0) { return len; }
+        int from = len - 1;
         if (from > 0
                 && Character.isLowSurrogate(buffer.charAt(from))
                 && Character.isHighSurrogate(buffer.charAt(from - 1))) {
             from--;
         }
-        buffer.delete(from, buffer.length());
+        return from;
     }
 }
