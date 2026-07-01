@@ -48,6 +48,7 @@ ssh-keygen -q -t ed25519 -N '' -f "${BUILD_DIR}/id_ed25519" >/dev/null
 ssh-keygen -q -t ed25519 -N 'secret-passphrase' -f "${BUILD_DIR}/id_ed25519_enc" >/dev/null
 
 javac \
+  -Xlint:-options \
   -source 8 \
   -target 8 \
   -encoding UTF-8 \

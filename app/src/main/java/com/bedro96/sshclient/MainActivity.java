@@ -338,11 +338,9 @@ public final class MainActivity extends Activity {
                         Identity identity = JschEd25519Support.addIdentity(jsch, idFile, password);
                         if (JschEd25519Support.isEncrypted(identity)) {
                             if (TextUtils.isEmpty(password)) {
-                                throw new JSchException("Identity key is passphrase-protected."
-                                        + " Enter the passphrase in the password field.");
+                                throw new JSchException("Identity key is passphrase-protected. Enter the passphrase in the password field.");
                             }
-                            throw new JSchException("Unable to decrypt the identity key."
-                                    + " Check the passphrase in the password field.");
+                            throw new JSchException("Unable to decrypt the identity key. Check the passphrase in the password field.");
                         }
                     }
                     Session s = jsch.getSession(user, host, port);
