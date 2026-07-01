@@ -10,7 +10,8 @@ without Gradle — it uses the Android SDK command-line tools directly (see
 
 ## Features
 
-- Authentication via password and/or imported identity (private key) file
+- Authentication via password and/or imported identity (private key) file;
+  the password field also doubles as the private-key passphrase when needed
 - Saved host profiles (name, host, port, username, password, identity file)
   selectable from a dropdown for fast reconnect; Save/Delete buttons
 - Import an identity file from device storage into the app (system file picker)
@@ -53,13 +54,25 @@ The script:
 - auto-selects the newest installed build-tools directory and platform jar
 - downloads and verifies (SHA-256) the
   [`com.github.mwiede:jsch`](https://github.com/mwiede/jsch) SSH library
-  jar into `app/libs/`
+  jar plus
+  [`org.bouncycastle:bcprov-jdk18on`](https://www.bouncycastle.org/java.html)
+  into `app/libs/`
 - compiles Java with `javac`, dexes via `d8`, packages with `aapt2`,
-  zip-aligns and signs with `apksigner`
+  packages every generated `*.dex`, zip-aligns and signs with `apksigner`
 - writes the result to `release/app-release.apk`
 
 Override the JSch version (and update its checksum in `build-release.sh`) if
 you want to ship a newer SSH library.
+
+## Offline Ed25519 regression test
+
+```bash
+./test-ed25519.sh
+```
+
+This test disables JAR multi-release support to simulate Android, then proves
+an imported Ed25519 identity can sign and verify through JSch's bundled
+BouncyCastle-backed `com.jcraft.jsch.bc.*` implementation.
 
 ## Source layout
 

@@ -44,8 +44,12 @@ MIN_SDK="24"
 JSCH_VERSION="${JSCH_VERSION:-0.2.21}"
 JSCH_SHA256="2330df0841be84eefa7c6ba4b5a2c98faa153855c80a5af418fdedacc2a4bc5b"
 JSCH_URL="https://repo1.maven.org/maven2/com/github/mwiede/jsch/${JSCH_VERSION}/jsch-${JSCH_VERSION}.jar"
+BCPROV_VERSION="${BCPROV_VERSION:-1.81}"
+BCPROV_SHA256="249f396412b0c0ce67f25c8197da757b241b8be3ec4199386c00704a2457459b"
+BCPROV_URL="https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk18on/${BCPROV_VERSION}/bcprov-jdk18on-${BCPROV_VERSION}.jar"
 LIBS_DIR="${ROOT_DIR}/app/libs"
 JSCH_JAR="${LIBS_DIR}/jsch-${JSCH_VERSION}.jar"
+BCPROV_JAR="${LIBS_DIR}/bcprov-jdk18on-${BCPROV_VERSION}.jar"
 AAPT2="${BUILD_TOOLS_DIR}/aapt2"
 D8="${BUILD_TOOLS_DIR}/d8"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
@@ -88,15 +92,25 @@ fi
 
 mkdir -p "${RELEASE_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex" "${LIBS_DIR}"
 
-if [[ ! -f "${JSCH_JAR}" ]]; then
-  echo "Downloading ${JSCH_URL}"
-  curl -fsSL --retry 3 -o "${JSCH_JAR}" "${JSCH_URL}"
-fi
-ACTUAL_SHA="$(sha256sum "${JSCH_JAR}" | awk '{print $1}')"
-if [[ "${ACTUAL_SHA}" != "${JSCH_SHA256}" ]]; then
-  echo "Checksum mismatch for JSch jar: expected ${JSCH_SHA256}, got ${ACTUAL_SHA}" >&2
-  exit 1
-fi
+download_and_verify_jar() {
+  local label="$1"
+  local url="$2"
+  local path="$3"
+  local expected_sha="$4"
+  if [[ ! -f "${path}" ]]; then
+    echo "Downloading ${url}"
+    curl -fsSL --retry 3 -o "${path}" "${url}"
+  fi
+  local actual_sha
+  actual_sha="$(sha256sum "${path}" | awk '{print $1}')"
+  if [[ "${actual_sha}" != "${expected_sha}" ]]; then
+    echo "Checksum mismatch for ${label} jar: expected ${expected_sha}, got ${actual_sha}" >&2
+    exit 1
+  fi
+}
+
+download_and_verify_jar "JSch" "${JSCH_URL}" "${JSCH_JAR}" "${JSCH_SHA256}"
+download_and_verify_jar "BouncyCastle" "${BCPROV_URL}" "${BCPROV_JAR}" "${BCPROV_SHA256}"
 
 "${AAPT2}" compile --dir "${ROOT_DIR}/app/src/main/res" -o "${BUILD_DIR}/resources.zip"
 "${AAPT2}" link \
@@ -114,7 +128,7 @@ javac \
   -target 8 \
   -encoding UTF-8 \
   -bootclasspath "${PLATFORM_JAR}" \
-  -classpath "${JSCH_JAR}" \
+  -classpath "${JSCH_JAR}:${BCPROV_JAR}" \
   -d "${BUILD_DIR}/classes" \
   $(find "${ROOT_DIR}/app/src/main/java" "${BUILD_DIR}/generated" -name '*.java' | sort)
 
@@ -123,7 +137,8 @@ javac \
   --lib "${PLATFORM_JAR}" \
   --output "${BUILD_DIR}/dex" \
   $(find "${BUILD_DIR}/classes" -name '*.class' | sort) \
-  "${JSCH_JAR}"
+  "${JSCH_JAR}" \
+  "${BCPROV_JAR}"
 (
   cd "${BUILD_DIR}/dex"
   zip -qj "${BUILD_DIR}/base.apk" *.dex
