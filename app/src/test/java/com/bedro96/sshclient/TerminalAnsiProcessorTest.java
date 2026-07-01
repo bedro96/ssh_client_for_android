@@ -10,6 +10,10 @@ public final class TerminalAnsiProcessorTest {
         testExtendedSgrForegroundAndBackground();
         testSplitSgrAcrossChunks();
         testBoldTracking();
+        testOscTerminatedByBelIsDiscarded();
+        testOscTerminatedByStIsDiscarded();
+        testSplitOscAcrossChunksIsDiscarded();
+        testNonSgrCsiFinalByteIsDiscarded();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -84,6 +88,36 @@ public final class TerminalAnsiProcessorTest {
         assertSegment(segments.get(0), "OK", 0x5fff00, null, "split sequence fg");
     }
 
+    private static void testOscTerminatedByBelIsDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u001b]0;user@host: ~\u0007OK", new Capture(segments));
+        assertEquals("OK", joinText(segments), "osc BEL should be discarded");
+    }
+
+    private static void testOscTerminatedByStIsDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u001b]0;user@host: ~\u001b\\OK", new Capture(segments));
+        assertEquals("OK", joinText(segments), "osc ST should be discarded");
+    }
+
+    private static void testSplitOscAcrossChunksIsDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+        processor.process("\u001b]0;user@host:", capture);
+        processor.process(" ~\u0007OK", capture);
+        assertEquals("OK", joinText(segments), "split osc should be discarded");
+    }
+
+    private static void testNonSgrCsiFinalByteIsDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b[2KB", new Capture(segments));
+        assertEquals("AB", joinText(segments), "non-SGR CSI should be discarded");
+    }
+
     private static void assertSegment(
             Segment segment, String text, Integer fg, Integer bg, String what) {
         assertEquals(text, segment.text, what + " text");
@@ -96,6 +130,14 @@ public final class TerminalAnsiProcessorTest {
             throw new AssertionError(
                     "FAILED " + what + ": expected <" + expected + "> but was <" + actual + ">");
         }
+    }
+
+    private static String joinText(List<Segment> segments) {
+        StringBuilder allText = new StringBuilder();
+        for (Segment segment : segments) {
+            allText.append(segment.text);
+        }
+        return allText.toString();
     }
 
     private static final class Capture implements TerminalAnsiProcessor.SegmentConsumer {
