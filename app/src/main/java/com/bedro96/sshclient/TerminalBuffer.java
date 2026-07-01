@@ -110,7 +110,12 @@ final class TerminalBuffer {
         }
 
         private void applyChunk(CharSequence chunk) {
-            String text = pendingEscape.isEmpty() ? chunk.toString() : pendingEscape + chunk;
+            String text;
+            if (pendingEscape.isEmpty() && chunk instanceof String) {
+                text = (String) chunk;
+            } else {
+                text = pendingEscape + chunk;
+            }
             pendingEscape = "";
             for (int i = 0; i < text.length(); i++) {
                 char c = text.charAt(i);
@@ -192,8 +197,7 @@ final class TerminalBuffer {
                 return;
             }
             if (command == '8') {
-                row = clamp(savedRow, 0, active.rows - 1);
-                col = clamp(savedCol, 0, active.cols - 1);
+                restoreSavedCursor();
                 return;
             }
             if (command == 'D') {
@@ -239,8 +243,7 @@ final class TerminalBuffer {
                 return;
             }
             if (command == 'u') {
-                row = clamp(savedRow, 0, active.rows - 1);
-                col = clamp(savedCol, 0, active.cols - 1);
+                restoreSavedCursor();
                 return;
             }
             if (command == 'J') {
@@ -405,6 +408,11 @@ final class TerminalBuffer {
             }
             active.cells[r][c] = ch;
         }
+
+        private void restoreSavedCursor() {
+            row = clamp(savedRow, 0, active.rows - 1);
+            col = clamp(savedCol, 0, active.cols - 1);
+        }
     }
 
     private static final class Screen {
@@ -434,11 +442,11 @@ final class TerminalBuffer {
         private void copyRows(int fromStart, int fromEnd, int delta) {
             if (delta < 0) {
                 for (int r = fromStart; r <= fromEnd; r++) {
-                    cells[r + delta] = cells[r];
+                    cells[r + delta] = cells[r].clone();
                 }
             } else {
                 for (int r = fromEnd; r >= fromStart; r--) {
-                    cells[r + delta] = cells[r];
+                    cells[r + delta] = cells[r].clone();
                 }
             }
             int clearRow = delta < 0 ? fromEnd : fromStart;
