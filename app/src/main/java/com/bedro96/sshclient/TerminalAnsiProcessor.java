@@ -7,6 +7,11 @@ package com.bedro96.sshclient;
  * - background: ESC [ 48 ; 5 ; {n} m
  */
 public final class TerminalAnsiProcessor {
+    private static final int ESCAPE_STATE_TEXT = 0;
+    private static final int ESCAPE_STATE_AFTER_ESC = 1;
+    private static final int ESCAPE_STATE_CSI = 2;
+    private static final int ESCAPE_STATE_OSC = 3;
+    private static final int ESCAPE_STATE_OSC_MAYBE_ST = 4;
 
     private static final int[] BASE_16_RGB = new int[] {
             0x000000, 0xcd0000, 0x00cd00, 0xcdcd00,
@@ -18,7 +23,7 @@ public final class TerminalAnsiProcessor {
 
     private final StringBuilder pendingText = new StringBuilder();
     private final StringBuilder pendingEscape = new StringBuilder();
-    private boolean readingEscape;
+    private int escapeState = ESCAPE_STATE_TEXT;
     private boolean bold;
     private Integer foregroundRgb;
     private Integer backgroundRgb;
@@ -30,28 +35,11 @@ public final class TerminalAnsiProcessor {
     void process(CharSequence chunk, SegmentConsumer consumer) {
         for (int i = 0; i < chunk.length(); i++) {
             char ch = chunk.charAt(i);
-            if (!readingEscape) {
-                if (ch == 0x1b) {
-                    flushPendingText(consumer);
-                    readingEscape = true;
-                    pendingEscape.setLength(0);
-                } else {
-                    pendingText.append(ch);
-                }
+            if (escapeState == ESCAPE_STATE_TEXT) {
+                processPlainTextChar(ch, consumer);
                 continue;
             }
-
-            if (pendingEscape.length() == 0 && ch != '[') {
-                readingEscape = false;
-                continue;
-            }
-
-            pendingEscape.append(ch);
-            if (pendingEscape.length() > 1 && ch >= 0x40 && ch <= 0x7e) {
-                applyEscapeSequence(pendingEscape.toString());
-                pendingEscape.setLength(0);
-                readingEscape = false;
-            }
+            processEscapeChar(ch);
         }
         flushPendingText(consumer);
     }
@@ -59,7 +47,7 @@ public final class TerminalAnsiProcessor {
     void reset() {
         pendingText.setLength(0);
         pendingEscape.setLength(0);
-        readingEscape = false;
+        escapeState = ESCAPE_STATE_TEXT;
         bold = false;
         foregroundRgb = null;
         backgroundRgb = null;
@@ -89,6 +77,58 @@ public final class TerminalAnsiProcessor {
         }
         consumer.accept(pendingText.toString(), bold, foregroundRgb, backgroundRgb);
         pendingText.setLength(0);
+    }
+
+    private void processPlainTextChar(char ch, SegmentConsumer consumer) {
+        if (ch == 0x1b) {
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_AFTER_ESC;
+            return;
+        }
+        pendingText.append(ch);
+    }
+
+    private void processEscapeChar(char ch) {
+        if (escapeState == ESCAPE_STATE_AFTER_ESC) {
+            if (ch == '[') {
+                escapeState = ESCAPE_STATE_CSI;
+                pendingEscape.setLength(0);
+                pendingEscape.append(ch);
+                return;
+            }
+            if (ch == ']') {
+                escapeState = ESCAPE_STATE_OSC;
+                return;
+            }
+            escapeState = ESCAPE_STATE_TEXT;
+            return;
+        }
+        if (escapeState == ESCAPE_STATE_CSI) {
+            pendingEscape.append(ch);
+            if (ch >= 0x40 && ch <= 0x7e) {
+                applyEscapeSequence(pendingEscape.toString());
+                pendingEscape.setLength(0);
+                escapeState = ESCAPE_STATE_TEXT;
+            }
+            return;
+        }
+        if (escapeState == ESCAPE_STATE_OSC) {
+            if (ch == 0x07) {
+                escapeState = ESCAPE_STATE_TEXT;
+                return;
+            }
+            if (ch == 0x1b) {
+                escapeState = ESCAPE_STATE_OSC_MAYBE_ST;
+            }
+            return;
+        }
+        if (escapeState == ESCAPE_STATE_OSC_MAYBE_ST) {
+            if (ch == '\\') {
+                escapeState = ESCAPE_STATE_TEXT;
+            } else if (ch != 0x1b) {
+                escapeState = ESCAPE_STATE_OSC;
+            }
+        }
     }
 
     private void applyEscapeSequence(String sequence) {
