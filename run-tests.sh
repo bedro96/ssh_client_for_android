@@ -55,3 +55,11 @@ echo "Running SshKeyAuthTest (multi-release disabled to simulate Android)..."
 java -Djdk.util.jar.enableMultiRelease=false \
   -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.SshKeyAuthTest
+
+javac -encoding UTF-8 -d "${BUILD_DIR}" \
+  "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/AnsiEscapeParser.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/AnsiEscapeParserTest.java"
+
+echo "Running AnsiEscapeParserTest..."
+java -classpath "${BUILD_DIR}" \
+  com.bedro96.sshclient.AnsiEscapeParserTest

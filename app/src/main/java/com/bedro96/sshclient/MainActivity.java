@@ -3,13 +3,20 @@ package com.bedro96.sshclient;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -86,7 +93,8 @@ public final class MainActivity extends Activity {
     /** True while we programmatically reset the terminal text, to suppress echo. */
     private boolean suppressTextWatcher;
     /** Authoritative terminal text as produced by the remote shell. */
-    private final StringBuilder termBuffer = new StringBuilder();
+    private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
+    private final AnsiEscapeParser ansiParser = new AnsiEscapeParser();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -489,7 +497,7 @@ public final class MainActivity extends Activity {
 
     private void restoreBuffer() {
         suppressTextWatcher = true;
-        txtOutput.setText(termBuffer.toString());
+        txtOutput.setText(new SpannableStringBuilder(termBuffer));
         txtOutput.setSelection(txtOutput.getText().length());
         suppressTextWatcher = false;
     }
@@ -560,12 +568,30 @@ public final class MainActivity extends Activity {
     private void setStatus(CharSequence s) { txtStatus.setText(s); }
 
     private void appendOutput(CharSequence chunk) {
-        termBuffer.append(chunk);
+        if (chunk == null || chunk.length() == 0) { return; }
+        List<AnsiEscapeParser.Segment> segments = ansiParser.consume(chunk.toString());
+        for (AnsiEscapeParser.Segment segment : segments) {
+            if (segment.text.isEmpty()) { continue; }
+            int start = termBuffer.length();
+            termBuffer.append(segment.text);
+            int end = termBuffer.length();
+            if (segment.style.bold) {
+                termBuffer.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (segment.style.fgCode != AnsiEscapeParser.DEFAULT_COLOR) {
+                termBuffer.setSpan(new ForegroundColorSpan(resolveAnsiColor(segment.style.fgCode)),
+                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (segment.style.bgCode != AnsiEscapeParser.DEFAULT_COLOR) {
+                termBuffer.setSpan(new BackgroundColorSpan(resolveAnsiColor(segment.style.bgCode)),
+                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
         if (termBuffer.length() > MAX_OUTPUT_CHARS) {
             termBuffer.delete(0, termBuffer.length() - MAX_OUTPUT_CHARS);
         }
         suppressTextWatcher = true;
-        txtOutput.setText(termBuffer.toString());
+        txtOutput.setText(new SpannableStringBuilder(termBuffer));
         txtOutput.setSelection(txtOutput.getText().length());
         suppressTextWatcher = false;
         scrollOutput.post(new Runnable() {
@@ -574,9 +600,65 @@ public final class MainActivity extends Activity {
     }
 
     private void clearOutput() {
-        termBuffer.setLength(0);
+        termBuffer.clear();
+        ansiParser.reset();
         suppressTextWatcher = true;
         txtOutput.setText("");
         suppressTextWatcher = false;
+    }
+
+    private static int resolveAnsiColor(int code) {
+        switch (code) {
+            case 30:
+            case 40:
+                return Color.rgb(0, 0, 0);
+            case 31:
+            case 41:
+                return Color.rgb(170, 0, 0);
+            case 32:
+            case 42:
+                return Color.rgb(0, 170, 0);
+            case 33:
+            case 43:
+                return Color.rgb(170, 85, 0);
+            case 34:
+            case 44:
+                return Color.rgb(0, 0, 170);
+            case 35:
+            case 45:
+                return Color.rgb(170, 0, 170);
+            case 36:
+            case 46:
+                return Color.rgb(0, 170, 170);
+            case 37:
+            case 47:
+                return Color.rgb(170, 170, 170);
+            case 90:
+            case 100:
+                return Color.rgb(85, 85, 85);
+            case 91:
+            case 101:
+                return Color.rgb(255, 85, 85);
+            case 92:
+            case 102:
+                return Color.rgb(85, 255, 85);
+            case 93:
+            case 103:
+                return Color.rgb(255, 255, 85);
+            case 94:
+            case 104:
+                return Color.rgb(85, 85, 255);
+            case 95:
+            case 105:
+                return Color.rgb(255, 85, 255);
+            case 96:
+            case 106:
+                return Color.rgb(85, 255, 255);
+            case 97:
+            case 107:
+                return Color.rgb(255, 255, 255);
+            default:
+                return Color.WHITE;
+        }
     }
 }
