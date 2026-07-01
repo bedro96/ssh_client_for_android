@@ -106,7 +106,9 @@ public final class TerminalAnsiProcessor {
         if (escapeState == ESCAPE_STATE_CSI) {
             pendingEscape.append(ch);
             if (ch >= 0x40 && ch <= 0x7e) {
-                applyEscapeSequence(pendingEscape.toString());
+                if (ch == 'm') {
+                    applyEscapeSequence(pendingEscape.toString());
+                }
                 pendingEscape.setLength(0);
                 escapeState = ESCAPE_STATE_TEXT;
             }
