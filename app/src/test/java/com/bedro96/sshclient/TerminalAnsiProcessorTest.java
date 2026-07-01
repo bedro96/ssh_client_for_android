@@ -10,6 +10,7 @@ public final class TerminalAnsiProcessorTest {
         testExtendedSgrForegroundAndBackground();
         testSplitSgrAcrossChunks();
         testBoldTracking();
+        testNonSgrControlsAreForwarded();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -82,6 +83,18 @@ public final class TerminalAnsiProcessorTest {
 
         assertEquals(1, segments.size(), "split sequence segment count");
         assertSegment(segments.get(0), "OK", 0x5fff00, null, "split sequence fg");
+    }
+
+    private static void testNonSgrControlsAreForwarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        processor.process("abc\u001b[K\r", capture);
+
+        assertEquals(2, segments.size(), "control forwarding segment count");
+        assertSegment(segments.get(0), "abc", null, null, "control forwarding text before escape");
+        assertSegment(segments.get(1), "\u001b[K\r", null, null, "control forwarding escape text");
     }
 
     private static void assertSegment(

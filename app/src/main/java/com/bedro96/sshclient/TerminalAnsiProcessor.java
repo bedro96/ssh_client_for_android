@@ -8,6 +8,7 @@ package com.bedro96.sshclient;
  */
 public final class TerminalAnsiProcessor {
 
+    private static final char ESC = 0x1b;
     private static final int[] BASE_16_RGB = new int[] {
             0x000000, 0xcd0000, 0x00cd00, 0xcdcd00,
             0x0000ee, 0xcd00cd, 0x00cdcd, 0xe5e5e5,
@@ -48,7 +49,10 @@ public final class TerminalAnsiProcessor {
 
             pendingEscape.append(ch);
             if (pendingEscape.length() > 1 && ch >= 0x40 && ch <= 0x7e) {
-                applyEscapeSequence(pendingEscape.toString());
+                String sequence = pendingEscape.toString();
+                if (!applyEscapeSequence(sequence)) {
+                    pendingText.append(ESC).append(sequence);
+                }
                 pendingEscape.setLength(0);
                 readingEscape = false;
             }
@@ -91,14 +95,14 @@ public final class TerminalAnsiProcessor {
         pendingText.setLength(0);
     }
 
-    private void applyEscapeSequence(String sequence) {
+    private boolean applyEscapeSequence(String sequence) {
         if (sequence.length() < 2 || sequence.charAt(0) != '[' || sequence.charAt(sequence.length() - 1) != 'm') {
-            return;
+            return false;
         }
         String body = sequence.substring(1, sequence.length() - 1);
         if (body.isEmpty()) {
             applySgr(0);
-            return;
+            return true;
         }
 
         String[] tokens = body.split(";", -1);
@@ -113,6 +117,7 @@ public final class TerminalAnsiProcessor {
             }
             applySgr(code);
         }
+        return true;
     }
 
     private int applyExtendedColor(String[] tokens, int modeIndex, boolean foreground) {

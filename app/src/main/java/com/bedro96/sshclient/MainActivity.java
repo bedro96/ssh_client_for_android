@@ -95,6 +95,7 @@ public final class MainActivity extends Activity {
     /** Authoritative terminal text as produced by the remote shell. */
     private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
     private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
+    private int termCursor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -581,7 +582,9 @@ public final class MainActivity extends Activity {
             }
         });
         if (termBuffer.length() > MAX_OUTPUT_CHARS) {
-            termBuffer.delete(0, termBuffer.length() - MAX_OUTPUT_CHARS);
+            int overflow = termBuffer.length() - MAX_OUTPUT_CHARS;
+            termBuffer.delete(0, overflow);
+            termCursor = Math.max(0, termCursor - overflow);
         }
         suppressTextWatcher = true;
         txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
@@ -594,25 +597,140 @@ public final class MainActivity extends Activity {
 
     /**
      * Appends one ANSI-styled segment to the terminal buffer, interpreting
-     * backspace ({@code \b}) and DEL ({@code 0x7f}) as delete-previous-character
+     * line-edit controls (CR/CSI erase/cursor movement) and backspace/DEL deletes
      * so remote line editing stays aligned with the on-screen buffer.
      */
     private void appendStyledSegment(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-        int runStart = termBuffer.length();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (c == '\b' || c == 0x7f) {
-                styleRange(runStart, termBuffer.length(), bold, foregroundRgb, backgroundRgb);
-                int from = TerminalBuffer.deleteStartIndex(termBuffer);
-                if (from < termBuffer.length()) {
-                    termBuffer.delete(from, termBuffer.length());
+            if (c == 0x1b && i + 1 < text.length() && text.charAt(i + 1) == '[') {
+                int end = findCsiEnd(text, i + 2);
+                if (end > 0) {
+                    applyStyledCsi(text, i + 2, end);
+                    i = end;
+                    continue;
                 }
-                runStart = termBuffer.length();
-            } else {
-                termBuffer.append(c);
+            }
+            if (c == '\r') {
+                termCursor = lineStart(termCursor);
+                continue;
+            }
+            if (c == '\b' || c == 0x7f) {
+                int from = TerminalBuffer.deleteStartIndex(termBuffer, termCursor);
+                if (from < termCursor) {
+                    termBuffer.delete(from, termCursor);
+                    termCursor = from;
+                }
+                continue;
+            }
+            appendStyledCharacter(c, bold, foregroundRgb, backgroundRgb);
+        }
+    }
+
+    private int findCsiEnd(String text, int start) {
+        for (int i = start; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch >= 0x40 && ch <= 0x7e) {
+                return i;
             }
         }
-        styleRange(runStart, termBuffer.length(), bold, foregroundRgb, backgroundRgb);
+        return -1;
+    }
+
+    private void applyStyledCsi(String text, int paramStart, int end) {
+        char command = text.charAt(end);
+        String params = text.substring(paramStart, end);
+        if (command == 'K') {
+            eraseLine(parseCsiNumber(params, 0, 0));
+            return;
+        }
+        if (command == 'J' && parseCsiNumber(params, 0, 0) == 2) {
+            termBuffer.clear();
+            termCursor = 0;
+            return;
+        }
+        if (command == 'H') {
+            termCursor = 0;
+            return;
+        }
+        if (command == 'G') {
+            int column = parseCsiNumber(params, 0, 1);
+            int lineStart = lineStart(termCursor);
+            termCursor = Math.min(lineStart + Math.max(0, column - 1), lineEnd(termCursor));
+            return;
+        }
+        if (command == 'C') {
+            int amount = Math.max(0, parseCsiNumber(params, 0, 1));
+            termCursor = Math.min(termCursor + amount, lineEnd(termCursor));
+            return;
+        }
+        if (command == 'D') {
+            int amount = Math.max(0, parseCsiNumber(params, 0, 1));
+            termCursor = Math.max(termCursor - amount, lineStart(termCursor));
+        }
+    }
+
+    private void appendStyledCharacter(char c, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
+        int safeCursor = Math.max(0, Math.min(termCursor, termBuffer.length()));
+        if (safeCursor < termBuffer.length() && termBuffer.charAt(safeCursor) != '\n') {
+            termBuffer.replace(safeCursor, safeCursor + 1, String.valueOf(c));
+        } else {
+            termBuffer.insert(safeCursor, String.valueOf(c));
+        }
+        styleRange(safeCursor, safeCursor + 1, bold, foregroundRgb, backgroundRgb);
+        termCursor = safeCursor + 1;
+    }
+
+    private void eraseLine(int mode) {
+        int lineStart = lineStart(termCursor);
+        int lineEnd = lineEnd(termCursor);
+        if (mode == 1) {
+            termBuffer.delete(lineStart, Math.min(termCursor + 1, lineEnd));
+            termCursor = lineStart;
+            return;
+        }
+        if (mode == 2) {
+            termBuffer.delete(lineStart, lineEnd);
+            termCursor = lineStart;
+            return;
+        }
+        termBuffer.delete(Math.min(termCursor, lineEnd), lineEnd);
+        termCursor = Math.min(termCursor, termBuffer.length());
+    }
+
+    private int lineStart(int cursor) {
+        int safeCursor = Math.max(0, Math.min(cursor, termBuffer.length()));
+        for (int i = safeCursor - 1; i >= 0; i--) {
+            if (termBuffer.charAt(i) == '\n') {
+                return i + 1;
+            }
+        }
+        return 0;
+    }
+
+    private int lineEnd(int cursor) {
+        int safeCursor = Math.max(0, Math.min(cursor, termBuffer.length()));
+        for (int i = safeCursor; i < termBuffer.length(); i++) {
+            if (termBuffer.charAt(i) == '\n') {
+                return i;
+            }
+        }
+        return termBuffer.length();
+    }
+
+    private static int parseCsiNumber(String params, int index, int defaultValue) {
+        if (TextUtils.isEmpty(params)) {
+            return defaultValue;
+        }
+        String[] parts = params.split(";", -1);
+        if (index >= parts.length || TextUtils.isEmpty(parts[index])) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(parts[index]);
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
     }
 
     private void styleRange(int start, int end, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
@@ -632,6 +750,7 @@ public final class MainActivity extends Activity {
 
     private void clearOutput() {
         termBuffer.clear();
+        termCursor = 0;
         ansiProcessor.reset();
         suppressTextWatcher = true;
         txtOutput.setText("");
