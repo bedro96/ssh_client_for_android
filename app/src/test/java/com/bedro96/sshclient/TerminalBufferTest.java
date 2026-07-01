@@ -9,6 +9,8 @@ public final class TerminalBufferTest {
         testRepeatedDeletesStayInSync();
         testBackspaceAtColumnZeroDoesNotCorruptBuffer();
         testDeleteByteAlsoDeletesPreviousCharacter();
+        testDeletePreviousCharacterAtCursor();
+        testCursorMovesStayWithinLine();
         System.out.println("TERMINAL BUFFER TESTS PASSED");
     }
 
@@ -34,6 +36,20 @@ public final class TerminalBufferTest {
         StringBuilder b = new StringBuilder("abcd");
         TerminalBuffer.appendChunk(b, "\u007f", 200_000);
         assertEquals("abc", b.toString(), "DEL should delete previous character");
+    }
+
+    private static void testDeletePreviousCharacterAtCursor() {
+        String text = "ab😀cd";
+        int from = TerminalBuffer.deleteStartIndex(text, 4);
+        assertEquals("2", Integer.toString(from), "deleteStartIndex should respect surrogate pairs");
+    }
+
+    private static void testCursorMovesStayWithinLine() {
+        String text = "hello\nworld";
+        int left = TerminalBuffer.moveCursorBackward(text, 2, 10);
+        int right = TerminalBuffer.moveCursorForward(text, 7, 10);
+        assertEquals("0", Integer.toString(left), "left move clamps to line start");
+        assertEquals("11", Integer.toString(right), "right move clamps to line end");
     }
 
     private static void assertEquals(String expected, String actual, String message) {

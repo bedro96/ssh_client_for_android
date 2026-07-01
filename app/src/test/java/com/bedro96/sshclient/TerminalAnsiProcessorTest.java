@@ -10,6 +10,7 @@ public final class TerminalAnsiProcessorTest {
         testExtendedSgrForegroundAndBackground();
         testSplitSgrAcrossChunks();
         testBoldTracking();
+        testCursorMoveSequences();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -82,6 +83,24 @@ public final class TerminalAnsiProcessorTest {
 
         assertEquals(1, segments.size(), "split sequence segment count");
         assertSegment(segments.get(0), "OK", 0x5fff00, null, "split sequence fg");
+    }
+
+    private static void testCursorMoveSequences() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        final List<String> moves = new ArrayList<>();
+        processor.process("A\u001b[3DB\u001b[2C", new TerminalAnsiProcessor.SegmentConsumer() {
+            @Override
+            public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) { }
+
+            @Override
+            public void moveCursorForward(int columns) { moves.add("R" + columns); }
+
+            @Override
+            public void moveCursorBackward(int columns) { moves.add("L" + columns); }
+        });
+        assertEquals(2, moves.size(), "cursor move callback count");
+        assertEquals("L3", moves.get(0), "cursor backward callback");
+        assertEquals("R2", moves.get(1), "cursor forward callback");
     }
 
     private static void assertSegment(

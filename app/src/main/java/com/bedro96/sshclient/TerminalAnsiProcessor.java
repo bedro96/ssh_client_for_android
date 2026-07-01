@@ -25,6 +25,10 @@ public final class TerminalAnsiProcessor {
 
     interface SegmentConsumer {
         void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb);
+
+        default void moveCursorForward(int columns) { }
+
+        default void moveCursorBackward(int columns) { }
     }
 
     void process(CharSequence chunk, SegmentConsumer consumer) {
@@ -48,7 +52,7 @@ public final class TerminalAnsiProcessor {
 
             pendingEscape.append(ch);
             if (pendingEscape.length() > 1 && ch >= 0x40 && ch <= 0x7e) {
-                applyEscapeSequence(pendingEscape.toString());
+                applyEscapeSequence(pendingEscape.toString(), consumer);
                 pendingEscape.setLength(0);
                 readingEscape = false;
             }
@@ -91,8 +95,29 @@ public final class TerminalAnsiProcessor {
         pendingText.setLength(0);
     }
 
-    private void applyEscapeSequence(String sequence) {
-        if (sequence.length() < 2 || sequence.charAt(0) != '[' || sequence.charAt(sequence.length() - 1) != 'm') {
+    private void applyEscapeSequence(String sequence, SegmentConsumer consumer) {
+        if (sequence.length() < 2 || sequence.charAt(0) != '[') {
+            return;
+        }
+        char command = sequence.charAt(sequence.length() - 1);
+        if (command == 'C' || command == 'D') {
+            String body = sequence.substring(1, sequence.length() - 1);
+            int columns = 1;
+            if (!body.isEmpty()) {
+                String[] parts = body.split(";", -1);
+                int parsed = parseToken(parts[0]);
+                if (parsed > 0) {
+                    columns = parsed;
+                }
+            }
+            if (command == 'C') {
+                consumer.moveCursorForward(columns);
+            } else {
+                consumer.moveCursorBackward(columns);
+            }
+            return;
+        }
+        if (command != 'm') {
             return;
         }
         String body = sequence.substring(1, sequence.length() - 1);

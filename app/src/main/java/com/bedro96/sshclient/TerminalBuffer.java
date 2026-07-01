@@ -37,14 +37,49 @@ final class TerminalBuffer {
      * Shared with the spannable terminal buffer in {@code MainActivity}.
      */
     static int deleteStartIndex(CharSequence buffer) {
+        return deleteStartIndex(buffer, buffer.length());
+    }
+
+    static int deleteStartIndex(CharSequence buffer, int endExclusive) {
         int len = buffer.length();
         if (len == 0) { return len; }
-        int from = len - 1;
+        int end = Math.max(0, Math.min(endExclusive, len));
+        if (end == 0) { return 0; }
+        int from = end - 1;
         if (from > 0
                 && Character.isLowSurrogate(buffer.charAt(from))
                 && Character.isHighSurrogate(buffer.charAt(from - 1))) {
             from--;
         }
         return from;
+    }
+
+    static int lineStart(CharSequence buffer, int cursor) {
+        int pos = Math.max(0, Math.min(cursor, buffer.length()));
+        while (pos > 0 && buffer.charAt(pos - 1) != '\n') {
+            pos--;
+        }
+        return pos;
+    }
+
+    static int lineEnd(CharSequence buffer, int cursor) {
+        int len = buffer.length();
+        int pos = Math.max(0, Math.min(cursor, len));
+        while (pos < len && buffer.charAt(pos) != '\n') {
+            pos++;
+        }
+        return pos;
+    }
+
+    static int moveCursorBackward(CharSequence buffer, int cursor, int columns) {
+        int pos = Math.max(0, Math.min(cursor, buffer.length()));
+        int target = pos - Math.max(0, columns);
+        return Math.max(lineStart(buffer, pos), target);
+    }
+
+    static int moveCursorForward(CharSequence buffer, int cursor, int columns) {
+        int pos = Math.max(0, Math.min(cursor, buffer.length()));
+        int target = pos + Math.max(0, columns);
+        return Math.min(lineEnd(buffer, pos), target);
     }
 }

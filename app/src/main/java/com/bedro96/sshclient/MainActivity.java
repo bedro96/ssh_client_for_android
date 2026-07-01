@@ -95,6 +95,7 @@ public final class MainActivity extends Activity {
     /** Authoritative terminal text as produced by the remote shell. */
     private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
     private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
+    private int terminalCursor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -136,6 +137,7 @@ public final class MainActivity extends Activity {
         wireKeyToolbar();
         wireTerminalInput();
         setTerminalSize(terminalSize);
+        txtOutput.setCursorVisible(false);
     }
 
     @Override
@@ -387,6 +389,7 @@ public final class MainActivity extends Activity {
                             setConnectionPanelCollapsed(true);
                             keyToolbar.setVisibility(View.VISIBLE);
                             txtOutput.setEnabled(true);
+                            txtOutput.setCursorVisible(true);
                             txtOutput.requestFocus();
                         }
                     });
@@ -463,6 +466,7 @@ public final class MainActivity extends Activity {
         setConnectionPanelCollapsed(false);
         keyToolbar.setVisibility(View.GONE);
         txtOutput.setEnabled(false);
+        txtOutput.setCursorVisible(false);
     }
 
     private void cleanupSilently() {
@@ -498,10 +502,7 @@ public final class MainActivity extends Activity {
     }
 
     private void restoreBuffer() {
-        suppressTextWatcher = true;
-        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
-        txtOutput.setSelection(txtOutput.getText().length());
-        suppressTextWatcher = false;
+        renderTermBuffer();
     }
 
     private void sendRaw(final byte[] bytes) {
@@ -579,14 +580,21 @@ public final class MainActivity extends Activity {
             @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
                 appendStyledSegment(text, bold, foregroundRgb, backgroundRgb);
             }
+
+            @Override public void moveCursorForward(int columns) {
+                terminalCursor = TerminalBuffer.moveCursorForward(termBuffer, terminalCursor, columns);
+            }
+
+            @Override public void moveCursorBackward(int columns) {
+                terminalCursor = TerminalBuffer.moveCursorBackward(termBuffer, terminalCursor, columns);
+            }
         });
         if (termBuffer.length() > MAX_OUTPUT_CHARS) {
-            termBuffer.delete(0, termBuffer.length() - MAX_OUTPUT_CHARS);
+            int trimmed = termBuffer.length() - MAX_OUTPUT_CHARS;
+            termBuffer.delete(0, trimmed);
+            terminalCursor = Math.max(0, terminalCursor - trimmed);
         }
-        suppressTextWatcher = true;
-        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
-        txtOutput.setSelection(txtOutput.getText().length());
-        suppressTextWatcher = false;
+        renderTermBuffer();
         scrollOutput.post(new Runnable() {
             @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
         });
@@ -598,21 +606,29 @@ public final class MainActivity extends Activity {
      * so remote line editing stays aligned with the on-screen buffer.
      */
     private void appendStyledSegment(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-        int runStart = termBuffer.length();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (c == '\b' || c == 0x7f) {
-                styleRange(runStart, termBuffer.length(), bold, foregroundRgb, backgroundRgb);
-                int from = TerminalBuffer.deleteStartIndex(termBuffer);
-                if (from < termBuffer.length()) {
-                    termBuffer.delete(from, termBuffer.length());
+                int from = TerminalBuffer.deleteStartIndex(termBuffer, terminalCursor);
+                if (from < terminalCursor) {
+                    termBuffer.delete(from, terminalCursor);
+                    terminalCursor = from;
                 }
-                runStart = termBuffer.length();
-            } else {
-                termBuffer.append(c);
+                continue;
             }
+            if (c == '\r') {
+                terminalCursor = TerminalBuffer.lineStart(termBuffer, terminalCursor);
+                continue;
+            }
+            int start = terminalCursor;
+            if (start < termBuffer.length() && termBuffer.charAt(start) != '\n') {
+                termBuffer.replace(start, start + 1, Character.toString(c));
+            } else {
+                termBuffer.insert(start, Character.toString(c));
+            }
+            terminalCursor = start + 1;
+            styleRange(start, terminalCursor, bold, foregroundRgb, backgroundRgb);
         }
-        styleRange(runStart, termBuffer.length(), bold, foregroundRgb, backgroundRgb);
     }
 
     private void styleRange(int start, int end, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
@@ -632,9 +648,18 @@ public final class MainActivity extends Activity {
 
     private void clearOutput() {
         termBuffer.clear();
+        terminalCursor = 0;
         ansiProcessor.reset();
         suppressTextWatcher = true;
         txtOutput.setText("");
+        txtOutput.setCursorVisible(false);
+        suppressTextWatcher = false;
+    }
+
+    private void renderTermBuffer() {
+        suppressTextWatcher = true;
+        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
+        txtOutput.setSelection(Math.max(0, Math.min(terminalCursor, txtOutput.getText().length())));
         suppressTextWatcher = false;
     }
 }
