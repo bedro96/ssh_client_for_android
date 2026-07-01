@@ -159,9 +159,7 @@ public final class TerminalAnsiProcessor {
         if (escapeState == ESCAPE_STATE_OSC_MAYBE_ST) {
             if (ch == '\\') {
                 escapeState = ESCAPE_STATE_TEXT;
-            } else if (ch == 0x1b) {
-                escapeState = ESCAPE_STATE_OSC_MAYBE_ST;
-            } else {
+            } else if (ch != 0x1b) {
                 escapeState = ESCAPE_STATE_OSC;
             }
             return;
@@ -179,9 +177,7 @@ public final class TerminalAnsiProcessor {
         if (escapeState == ESCAPE_STATE_STRING_MAYBE_ST) {
             if (ch == '\\') {
                 escapeState = ESCAPE_STATE_TEXT;
-            } else if (ch == 0x1b) {
-                escapeState = ESCAPE_STATE_STRING_MAYBE_ST;
-            } else {
+            } else if (ch != 0x1b) {
                 escapeState = ESCAPE_STATE_STRING;
             }
         }
