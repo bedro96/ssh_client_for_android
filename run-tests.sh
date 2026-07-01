@@ -48,10 +48,16 @@ CP="${JSCH_JAR}:${BCPROV_JAR}"
 # Compile the production helper plus the test, WITHOUT the Java15+ multi-release
 # EdDSA classes so we validate the Android (Bouncy Castle) code path.
 javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
+  "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/Utf8ChunkReader.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/SshKeyAuth.java" \
-  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshKeyAuthTest.java"
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshKeyAuthTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/Utf8ChunkReaderTest.java"
 
 echo "Running SshKeyAuthTest (multi-release disabled to simulate Android)..."
 java -Djdk.util.jar.enableMultiRelease=false \
   -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.SshKeyAuthTest
+
+echo "Running Utf8ChunkReaderTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  com.bedro96.sshclient.Utf8ChunkReaderTest

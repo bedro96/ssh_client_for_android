@@ -419,13 +419,12 @@ public final class MainActivity extends Activity {
     private void startReader(final InputStream in) {
         Thread t = new Thread(new Runnable() {
             @Override public void run() {
-                byte[] buf = new byte[4096];
+                Utf8ChunkReader reader = new Utf8ChunkReader(in);
                 try {
                     while (!Thread.currentThread().isInterrupted()) {
-                        int n = in.read(buf);
-                        if (n < 0) { break; }
-                        if (n == 0) { continue; }
-                        final String chunk = new String(buf, 0, n, UTF8);
+                        final String chunk = reader.readChunk();
+                        if (chunk == null) { break; }
+                        if (chunk.length() == 0) { continue; }
                         ui.post(new Runnable() {
                             @Override public void run() { appendOutput(chunk); }
                         });
