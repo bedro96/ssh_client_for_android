@@ -334,7 +334,6 @@ public final class MainActivity extends Activity {
                     // jsch prefers is stripped out by Android's dex packaging.
                     SshKeyAuth.configureEdDSAForAndroid();
                     JSch jsch = new JSch();
-                    JschEd25519Support.configureJsch();
                     if (!TextUtils.isEmpty(idFile)) {
                         // The entered password doubles as the key passphrase so that
                         // passphrase-protected private keys can be decrypted. JSch
