@@ -13,7 +13,8 @@ public final class TerminalAnsiProcessorTest {
         testOscTerminatedByBelIsDiscarded();
         testOscTerminatedByStIsDiscarded();
         testSplitOscAcrossChunksIsDiscarded();
-        testNonSgrCsiFinalByteIsDiscarded();
+        testNonSgrCsiFinalByteIsReEmittedAsText();
+        testSplitNonSgrCsiIsReassembledAsText();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -111,11 +112,22 @@ public final class TerminalAnsiProcessorTest {
         assertEquals("OK", joinText(segments), "split osc should be discarded");
     }
 
-    private static void testNonSgrCsiFinalByteIsDiscarded() {
+    private static void testNonSgrCsiFinalByteIsReEmittedAsText() {
         TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
         List<Segment> segments = new ArrayList<>();
         processor.process("A\u001b[2KB", new Capture(segments));
-        assertEquals("AB", joinText(segments), "non-SGR CSI should be discarded");
+        assertEquals("A\u001b[2KB", joinText(segments),
+                "non-SGR CSI should be re-emitted as text for the buffer to interpret");
+    }
+
+    private static void testSplitNonSgrCsiIsReassembledAsText() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+        processor.process("A\u001b[1", capture);
+        processor.process("0GB", capture);
+        assertEquals("A\u001b[10GB", joinText(segments),
+                "split cursor CSI should be reassembled and re-emitted intact");
     }
 
     private static void assertSegment(

@@ -108,6 +108,12 @@ public final class TerminalAnsiProcessor {
             if (ch >= 0x40 && ch <= 0x7e) {
                 if (ch == 'm') {
                     applyEscapeSequence(pendingEscape.toString());
+                } else {
+                    // Re-emit cursor/erase CSI (e.g. CR redraws: ESC[K, ESC[G, ESC[C/D)
+                    // as literal text so the terminal buffer can interpret them for
+                    // in-place line redraws. Reassembled here so split-chunk sequences
+                    // reach the buffer intact.
+                    pendingText.append((char) 0x1b).append(pendingEscape);
                 }
                 pendingEscape.setLength(0);
                 escapeState = ESCAPE_STATE_TEXT;
