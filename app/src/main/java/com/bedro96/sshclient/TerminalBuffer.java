@@ -7,6 +7,8 @@ final class TerminalBuffer {
 
     private static final char ESC = 0x1b;
     private static final char DEL_CHAR = 0x7f;
+    // Conventional VT100/xterm fallback geometry used until an explicit resize
+    // path is wired through this model.
     private static final int DEFAULT_ROWS = 24;
     private static final int DEFAULT_COLS = 80;
     private static final WeakHashMap<StringBuilder, State> STATES = new WeakHashMap<>();
@@ -449,10 +451,10 @@ final class TerminalBuffer {
                     cells[r + delta] = cells[r].clone();
                 }
             }
-            int clearRow = delta < 0 ? fromEnd : fromStart;
-            cells[clearRow] = new char[cols];
+            int rowToReinitialize = delta < 0 ? fromEnd : fromStart;
+            cells[rowToReinitialize] = new char[cols];
             for (int c = 0; c < cols; c++) {
-                cells[clearRow][c] = ' ';
+                cells[rowToReinitialize][c] = ' ';
             }
         }
 
