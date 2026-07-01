@@ -15,6 +15,7 @@ public final class TerminalAnsiProcessorTest {
         testSplitOscAcrossChunksIsDiscarded();
         testNonSgrCsiFinalByteIsReEmittedAsText();
         testSplitNonSgrCsiIsReassembledAsText();
+        testNonCsiEscapesAreReEmittedAsText();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -128,6 +129,14 @@ public final class TerminalAnsiProcessorTest {
         processor.process("0GB", capture);
         assertEquals("A\u001b[10GB", joinText(segments),
                 "split cursor CSI should be reassembled and re-emitted intact");
+    }
+
+    private static void testNonCsiEscapesAreReEmittedAsText() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b7B\u001b8C\u001bDD\u001bME", new Capture(segments));
+        assertEquals("A\u001b7B\u001b8C\u001bDD\u001bME", joinText(segments),
+                "non-CSI escapes should be re-emitted so terminal cursor ops survive parsing");
     }
 
     private static void assertSegment(
