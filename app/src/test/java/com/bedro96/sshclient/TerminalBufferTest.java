@@ -39,9 +39,11 @@ public final class TerminalBufferTest {
     }
 
     private static void testDeletePreviousCharacterAtCursor() {
-        String text = "ab😀cd";
+        StringBuilder text = new StringBuilder("ab😀cd");
         int from = TerminalBuffer.deleteStartIndex(text, 4);
         assertEquals("2", Integer.toString(from), "deleteStartIndex should respect surrogate pairs");
+        text.delete(from, 4);
+        assertEquals("abcd", text.toString(), "surrogate pair deletion should remove one glyph");
     }
 
     private static void testCursorMovesStayWithinLine() {
