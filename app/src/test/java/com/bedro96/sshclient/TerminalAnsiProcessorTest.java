@@ -13,8 +13,16 @@ public final class TerminalAnsiProcessorTest {
         testOscTerminatedByBelIsDiscarded();
         testOscTerminatedByStIsDiscarded();
         testSplitOscAcrossChunksIsDiscarded();
-        testNonSgrCsiFinalByteIsReEmittedAsText();
-        testSplitNonSgrCsiIsReassembledAsText();
+        test8BitOscIsDiscarded();
+        testOscColorQueryAndSetPayloadsAreDiscarded();
+        test8BitCsiSgrIsApplied();
+        testUnsupportedCsiIsConsumedWithoutLeakingParams();
+        testSplitUnsupportedCsiAcrossChunksIsConsumed();
+        testLineEditCsiIsStillReEmittedAsText();
+        testSplitLineEditCsiIsReassembledAsText();
+        testDcsPmApcSosStringsAreDiscarded();
+        test8BitDcsPmApcSosStringsAreDiscarded();
+        testSplit8BitOscAcrossChunksIsDiscarded();
         testNonCsiEscapesAreReEmittedAsText();
         System.out.println("ALL TESTS PASSED");
     }
@@ -113,22 +121,87 @@ public final class TerminalAnsiProcessorTest {
         assertEquals("OK", joinText(segments), "split osc should be discarded");
     }
 
-    private static void testNonSgrCsiFinalByteIsReEmittedAsText() {
+    private static void test8BitOscIsDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u009d0;GitHub Copilot\u0007OK", new Capture(segments));
+        assertEquals("OK", joinText(segments), "8-bit osc BEL should be discarded");
+    }
+
+    private static void testOscColorQueryAndSetPayloadsAreDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u001b]10;?\u0007\u001b]11;?\u0007\u001b]4;15;?\u001b\\", new Capture(segments));
+        processor.process("\u001b]11;#0D1117\u0007\u001b]10;#F0F6FC\u001b\\DONE", new Capture(segments));
+        assertEquals("DONE", joinText(segments), "osc color payloads should be discarded");
+    }
+
+    private static void test8BitCsiSgrIsApplied() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u009b38;5;82mOK", new Capture(segments));
+        assertEquals(1, segments.size(), "8-bit csi sgr segment count");
+        assertSegment(segments.get(0), "OK", 0x5fff00, null, "8-bit csi sgr");
+    }
+
+    private static void testUnsupportedCsiIsConsumedWithoutLeakingParams() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b[?111;110lB\u001b[0cC", new Capture(segments));
+        assertEquals("ABC", joinText(segments),
+                "unsupported/private CSI should be consumed without leaking params");
+    }
+
+    private static void testSplitUnsupportedCsiAcrossChunksIsConsumed() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+        processor.process("A\u009b?111;", capture);
+        processor.process("110lB", capture);
+        assertEquals("AB", joinText(segments),
+                "split unsupported 8-bit csi should be consumed");
+    }
+
+    private static void testLineEditCsiIsStillReEmittedAsText() {
         TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
         List<Segment> segments = new ArrayList<>();
         processor.process("A\u001b[2KB", new Capture(segments));
         assertEquals("A\u001b[2KB", joinText(segments),
-                "non-SGR CSI should be re-emitted as text for the buffer to interpret");
+                "line-edit CSI should still be re-emitted as text");
     }
 
-    private static void testSplitNonSgrCsiIsReassembledAsText() {
+    private static void testSplitLineEditCsiIsReassembledAsText() {
         TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
         List<Segment> segments = new ArrayList<>();
         Capture capture = new Capture(segments);
         processor.process("A\u001b[1", capture);
         processor.process("0GB", capture);
         assertEquals("A\u001b[10GB", joinText(segments),
-                "split cursor CSI should be reassembled and re-emitted intact");
+                "split line-edit CSI should be reassembled and re-emitted intact");
+    }
+
+    private static void testDcsPmApcSosStringsAreDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u001bP1$r0 q\u001b\\A\u001b^meta\u001b\\B\u001b_apc\u001b\\C\u001bXsos\u001b\\D",
+                new Capture(segments));
+        assertEquals("ABCD", joinText(segments), "7-bit DCS/PM/APC/SOS should be discarded");
+    }
+
+    private static void test8BitDcsPmApcSosStringsAreDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u0090dcs\u009cA\u009epm\u009cB\u009fapc\u009cC\u0098sos\u009cD", new Capture(segments));
+        assertEquals("ABCD", joinText(segments), "8-bit DCS/PM/APC/SOS should be discarded");
+    }
+
+    private static void testSplit8BitOscAcrossChunksIsDiscarded() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+        processor.process("\u009d0;azureuser@kukovm: ~/ssh", capture);
+        processor.process("_client_for_android\u009cOK", capture);
+        assertEquals("OK", joinText(segments), "split 8-bit osc should be discarded");
     }
 
     private static void testNonCsiEscapesAreReEmittedAsText() {
