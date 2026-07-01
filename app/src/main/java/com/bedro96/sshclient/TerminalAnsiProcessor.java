@@ -12,6 +12,8 @@ public final class TerminalAnsiProcessor {
     private static final int ESCAPE_STATE_CSI = 2;
     private static final int ESCAPE_STATE_OSC = 3;
     private static final int ESCAPE_STATE_OSC_MAYBE_ST = 4;
+    private static final int ESCAPE_STATE_STRING = 5;
+    private static final int ESCAPE_STATE_STRING_MAYBE_ST = 6;
 
     private static final int[] BASE_16_RGB = new int[] {
             0x000000, 0xcd0000, 0x00cd00, 0xcdcd00,
@@ -85,6 +87,26 @@ public final class TerminalAnsiProcessor {
             escapeState = ESCAPE_STATE_AFTER_ESC;
             return;
         }
+        if (ch == 0x9b) {
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_CSI;
+            pendingEscape.setLength(0);
+            pendingEscape.append('[');
+            return;
+        }
+        if (ch == 0x9d) {
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_OSC;
+            return;
+        }
+        if (ch == 0x90 || ch == 0x98 || ch == 0x9e || ch == 0x9f) {
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_STRING;
+            return;
+        }
+        if (ch == 0x9c) {
+            return;
+        }
         pendingText.append(ch);
     }
 
@@ -100,6 +122,10 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_OSC;
                 return;
             }
+            if (ch == 'P' || ch == 'X' || ch == '^' || ch == '_') {
+                escapeState = ESCAPE_STATE_STRING;
+                return;
+            }
             escapeState = ESCAPE_STATE_TEXT;
             return;
         }
@@ -108,7 +134,7 @@ public final class TerminalAnsiProcessor {
             if (ch >= 0x40 && ch <= 0x7e) {
                 if (ch == 'm') {
                     applyEscapeSequence(pendingEscape.toString());
-                } else {
+                } else if (isLineEditCsiFinal(ch)) {
                     // Re-emit cursor/erase CSI (e.g. CR redraws: ESC[K, ESC[G, ESC[C/D)
                     // as literal text so the terminal buffer can interpret them for
                     // in-place line redraws. Reassembled here so split-chunk sequences
@@ -121,7 +147,7 @@ public final class TerminalAnsiProcessor {
             return;
         }
         if (escapeState == ESCAPE_STATE_OSC) {
-            if (ch == 0x07) {
+            if (ch == 0x07 || ch == 0x9c) {
                 escapeState = ESCAPE_STATE_TEXT;
                 return;
             }
@@ -135,6 +161,24 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_TEXT;
             } else if (ch != 0x1b) {
                 escapeState = ESCAPE_STATE_OSC;
+            }
+            return;
+        }
+        if (escapeState == ESCAPE_STATE_STRING) {
+            if (ch == 0x9c) {
+                escapeState = ESCAPE_STATE_TEXT;
+                return;
+            }
+            if (ch == 0x1b) {
+                escapeState = ESCAPE_STATE_STRING_MAYBE_ST;
+            }
+            return;
+        }
+        if (escapeState == ESCAPE_STATE_STRING_MAYBE_ST) {
+            if (ch == '\\') {
+                escapeState = ESCAPE_STATE_TEXT;
+            } else if (ch != 0x1b) {
+                escapeState = ESCAPE_STATE_STRING;
             }
         }
     }
@@ -229,6 +273,10 @@ public final class TerminalAnsiProcessor {
         if (code >= 100 && code <= 107) {
             backgroundRgb = xterm256IndexToRgb((code - 100) + 8);
         }
+    }
+
+    private static boolean isLineEditCsiFinal(char ch) {
+        return ch == 'K' || ch == 'G' || ch == 'C' || ch == 'D' || ch == 'H' || ch == 'J';
     }
 
     private static int parseToken(String token) {
