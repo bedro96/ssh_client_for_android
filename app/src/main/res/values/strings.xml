@@ -4,7 +4,7 @@
     <string name="hint_host">Host (e.g. example.com)</string>
     <string name="hint_port">Port</string>
     <string name="hint_user">Username</string>
-    <string name="hint_password">Password</string>
+    <string name="hint_password">Password / passphrase</string>
     <string name="action_connect">Connect</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_save">Save</string>

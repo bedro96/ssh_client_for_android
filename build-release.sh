@@ -48,8 +48,8 @@ JSCH_URL="https://repo1.maven.org/maven2/com/github/mwiede/jsch/${JSCH_VERSION}/
 # (com.jcraft.jsch.bc.*). Without it, id_ed25519 identity keys fail with
 # "Auth fail for methods 'publickey'" because Android drops jsch's JDK15+
 # multi-release EdDSA classes.
-BCPROV_VERSION="${BCPROV_VERSION:-1.78.1}"
-BCPROV_SHA256="add5915e6acfc6ab5836e1fd8a5e21c6488536a8c1f21f386eeb3bf280b702d7"
+BCPROV_VERSION="${BCPROV_VERSION:-1.81}"
+BCPROV_SHA256="249f396412b0c0ce67f25c8197da757b241b8be3ec4199386c00704a2457459b"
 BCPROV_URL="https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk18on/${BCPROV_VERSION}/bcprov-jdk18on-${BCPROV_VERSION}.jar"
 LIBS_DIR="${ROOT_DIR}/app/libs"
 JSCH_JAR="${LIBS_DIR}/jsch-${JSCH_VERSION}.jar"
@@ -96,25 +96,25 @@ fi
 
 mkdir -p "${RELEASE_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex" "${LIBS_DIR}"
 
-if [[ ! -f "${JSCH_JAR}" ]]; then
-  echo "Downloading ${JSCH_URL}"
-  curl -fsSL --retry 3 -o "${JSCH_JAR}" "${JSCH_URL}"
-fi
-ACTUAL_SHA="$(sha256sum "${JSCH_JAR}" | awk '{print $1}')"
-if [[ "${ACTUAL_SHA}" != "${JSCH_SHA256}" ]]; then
-  echo "Checksum mismatch for JSch jar: expected ${JSCH_SHA256}, got ${ACTUAL_SHA}" >&2
-  exit 1
-fi
+download_and_verify_jar() {
+  local label="$1"
+  local url="$2"
+  local path="$3"
+  local expected_sha="$4"
+  if [[ ! -f "${path}" ]]; then
+    echo "Downloading ${url}"
+    curl -fsSL --retry 3 -o "${path}" "${url}"
+  fi
+  local actual_sha
+  actual_sha="$(sha256sum "${path}" | awk '{print $1}')"
+  if [[ "${actual_sha}" != "${expected_sha}" ]]; then
+    echo "Checksum mismatch for ${label} jar: expected ${expected_sha}, got ${actual_sha}" >&2
+    exit 1
+  fi
+}
 
-if [[ ! -f "${BCPROV_JAR}" ]]; then
-  echo "Downloading ${BCPROV_URL}"
-  curl -fsSL --retry 3 -o "${BCPROV_JAR}" "${BCPROV_URL}"
-fi
-ACTUAL_BCPROV_SHA="$(sha256sum "${BCPROV_JAR}" | awk '{print $1}')"
-if [[ "${ACTUAL_BCPROV_SHA}" != "${BCPROV_SHA256}" ]]; then
-  echo "Checksum mismatch for BouncyCastle jar: expected ${BCPROV_SHA256}, got ${ACTUAL_BCPROV_SHA}" >&2
-  exit 1
-fi
+download_and_verify_jar "JSch" "${JSCH_URL}" "${JSCH_JAR}" "${JSCH_SHA256}"
+download_and_verify_jar "BouncyCastle" "${BCPROV_URL}" "${BCPROV_JAR}" "${BCPROV_SHA256}"
 
 # Classpath of bundled jars, shared by javac and d8.
 DEP_CLASSPATH="${JSCH_JAR}:${BCPROV_JAR}"

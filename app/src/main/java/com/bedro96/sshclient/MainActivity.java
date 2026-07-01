@@ -21,7 +21,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.jcraft.jsch.ChannelShell;
+import com.jcraft.jsch.Identity;
 import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 
 import org.json.JSONArray;
@@ -336,10 +338,12 @@ public final class MainActivity extends Activity {
                         // The entered password doubles as the key passphrase so that
                         // passphrase-protected private keys can be decrypted. JSch
                         // ignores the passphrase for keys that are not encrypted.
-                        if (!TextUtils.isEmpty(password)) {
-                            jsch.addIdentity(idFile, password);
-                        } else {
-                            jsch.addIdentity(idFile);
+                        Identity identity = JschEd25519Support.addIdentity(jsch, idFile, password);
+                        if (JschEd25519Support.isEncrypted(identity)) {
+                            if (TextUtils.isEmpty(password)) {
+                                throw new JSchException("Identity key is passphrase-protected. Enter the passphrase in the password field.");
+                            }
+                            throw new JSchException("Unable to decrypt the identity key. Check the passphrase in the password field.");
                         }
                     }
                     Session s = jsch.getSession(user, host, port);
@@ -397,6 +401,9 @@ public final class MainActivity extends Activity {
         String msg = e.getMessage();
         if (msg == null) { msg = e.toString(); }
         String lowerCaseMsg = msg.toLowerCase();
+        if (lowerCaseMsg.contains("passphrase") || lowerCaseMsg.contains("decrypt the identity key")) {
+            return msg;
+        }
         if (lowerCaseMsg.contains("auth fail") || lowerCaseMsg.contains("auth cancel")) {
             if (!TextUtils.isEmpty(idFile)) {
                 return msg + " — the server rejected the identity key. Confirm the"
