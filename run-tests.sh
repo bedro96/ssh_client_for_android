@@ -58,6 +58,7 @@ java -Djdk.util.jar.enableMultiRelease=false \
   -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.SshKeyAuthTest
 
+echo "Running TerminalBufferTest..."
 java -Djdk.util.jar.enableMultiRelease=false \
   -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.TerminalBufferTest
