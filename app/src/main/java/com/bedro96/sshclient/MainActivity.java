@@ -567,10 +567,7 @@ public final class MainActivity extends Activity {
     private void setStatus(CharSequence s) { txtStatus.setText(s); }
 
     private void appendOutput(CharSequence chunk) {
-        termBuffer.append(chunk);
-        if (termBuffer.length() > MAX_OUTPUT_CHARS) {
-            termBuffer.delete(0, termBuffer.length() - MAX_OUTPUT_CHARS);
-        }
+        TerminalBuffer.appendChunk(termBuffer, chunk, MAX_OUTPUT_CHARS);
         suppressTextWatcher = true;
         txtOutput.setText(termBuffer.toString());
         txtOutput.setSelection(txtOutput.getText().length());
