@@ -68,6 +68,7 @@ public final class MainActivity extends Activity {
     private TextView txtStatus;
     private EditText txtOutput;
     private ScrollView scrollOutput;
+    private View panelConnection;
     private View keyToolbar;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -106,6 +107,7 @@ public final class MainActivity extends Activity {
         txtStatus = findViewById(R.id.txtStatus);
         txtOutput = findViewById(R.id.txtOutput);
         scrollOutput = findViewById(R.id.scrollOutput);
+        panelConnection = findViewById(R.id.panelConnection);
         keyToolbar = findViewById(R.id.keyToolbar);
 
         btnConnect.setOnClickListener(new View.OnClickListener() {
@@ -375,6 +377,7 @@ public final class MainActivity extends Activity {
                             setStatus(getString(R.string.status_connected) + " " + user + "@" + host + ":" + port);
                             btnConnect.setEnabled(true);
                             btnConnect.setText(R.string.action_disconnect);
+                            setConnectionPanelCollapsed(true);
                             keyToolbar.setVisibility(View.VISIBLE);
                             txtOutput.setEnabled(true);
                             txtOutput.requestFocus();
@@ -451,6 +454,7 @@ public final class MainActivity extends Activity {
         setConnectionInputsEnabled(true);
         btnConnect.setText(R.string.action_connect);
         btnConnect.setEnabled(true);
+        setConnectionPanelCollapsed(false);
         keyToolbar.setVisibility(View.GONE);
         txtOutput.setEnabled(false);
     }
@@ -555,6 +559,10 @@ public final class MainActivity extends Activity {
         btnSave.setEnabled(enabled);
         btnDelete.setEnabled(enabled);
         btnImportKey.setEnabled(enabled);
+    }
+
+    private void setConnectionPanelCollapsed(boolean collapsed) {
+        panelConnection.setVisibility(collapsed ? View.GONE : View.VISIBLE);
     }
 
     private void setStatus(CharSequence s) { txtStatus.setText(s); }
