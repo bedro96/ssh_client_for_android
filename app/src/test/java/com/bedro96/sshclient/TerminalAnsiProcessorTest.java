@@ -23,6 +23,7 @@ public final class TerminalAnsiProcessorTest {
         testDcsPmApcSosStringsAreDiscarded();
         test8BitDcsPmApcSosStringsAreDiscarded();
         testSplit8BitOscAcrossChunksIsDiscarded();
+        testNonCsiEscapesAreReEmittedAsText();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -201,6 +202,14 @@ public final class TerminalAnsiProcessorTest {
         processor.process("\u009d0;azureuser@kukovm: ~/ssh", capture);
         processor.process("_client_for_android\u009cOK", capture);
         assertEquals("OK", joinText(segments), "split 8-bit osc should be discarded");
+    }
+
+    private static void testNonCsiEscapesAreReEmittedAsText() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b7B\u001b8C\u001bDD\u001bME", new Capture(segments));
+        assertEquals("A\u001b7B\u001b8C\u001bDD\u001bME", joinText(segments),
+                "non-CSI escapes should be re-emitted so terminal cursor ops survive parsing");
     }
 
     private static void assertSegment(
