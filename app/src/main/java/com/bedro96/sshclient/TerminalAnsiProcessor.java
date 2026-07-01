@@ -65,7 +65,7 @@ public final class TerminalAnsiProcessor {
 
     static int xterm256IndexToRgb(int index) {
         if (index < 0 || index > 255) {
-            throw new IllegalArgumentException("xterm-256 color index out of range: " + index);
+            throw new IllegalArgumentException("xterm-256color index out of range: " + index);
         }
         if (index < 16) {
             return BASE_16_RGB[index];
