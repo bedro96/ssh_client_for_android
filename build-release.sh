@@ -44,6 +44,10 @@ MIN_SDK="24"
 JSCH_VERSION="${JSCH_VERSION:-0.2.21}"
 JSCH_SHA256="2330df0841be84eefa7c6ba4b5a2c98faa153855c80a5af418fdedacc2a4bc5b"
 JSCH_URL="https://repo1.maven.org/maven2/com/github/mwiede/jsch/${JSCH_VERSION}/jsch-${JSCH_VERSION}.jar"
+# BouncyCastle provides the Ed25519/EdDSA implementation jsch uses on Android
+# (com.jcraft.jsch.bc.*). Without it, id_ed25519 identity keys fail with
+# "Auth fail for methods 'publickey'" because Android drops jsch's JDK15+
+# multi-release EdDSA classes.
 BCPROV_VERSION="${BCPROV_VERSION:-1.81}"
 BCPROV_SHA256="249f396412b0c0ce67f25c8197da757b241b8be3ec4199386c00704a2457459b"
 BCPROV_URL="https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk18on/${BCPROV_VERSION}/bcprov-jdk18on-${BCPROV_VERSION}.jar"
@@ -112,6 +116,9 @@ download_and_verify_jar() {
 download_and_verify_jar "JSch" "${JSCH_URL}" "${JSCH_JAR}" "${JSCH_SHA256}"
 download_and_verify_jar "BouncyCastle" "${BCPROV_URL}" "${BCPROV_JAR}" "${BCPROV_SHA256}"
 
+# Classpath of bundled jars, shared by javac and d8.
+DEP_CLASSPATH="${JSCH_JAR}:${BCPROV_JAR}"
+
 "${AAPT2}" compile --dir "${ROOT_DIR}/app/src/main/res" -o "${BUILD_DIR}/resources.zip"
 "${AAPT2}" link \
   -I "${PLATFORM_JAR}" \
@@ -128,7 +135,7 @@ javac \
   -target 8 \
   -encoding UTF-8 \
   -bootclasspath "${PLATFORM_JAR}" \
-  -classpath "${JSCH_JAR}:${BCPROV_JAR}" \
+  -classpath "${DEP_CLASSPATH}" \
   -d "${BUILD_DIR}/classes" \
   $(find "${ROOT_DIR}/app/src/main/java" "${BUILD_DIR}/generated" -name '*.java' | sort)
 

@@ -53,16 +53,21 @@ The script:
   `build-tools/` installed (34.0.0 or newer)
 - auto-selects the newest installed build-tools directory and platform jar
 - downloads and verifies (SHA-256) the
-  [`com.github.mwiede:jsch`](https://github.com/mwiede/jsch) SSH library
-  jar plus
-  [`org.bouncycastle:bcprov-jdk18on`](https://www.bouncycastle.org/java.html)
-  into `app/libs/`
+  [`com.github.mwiede:jsch`](https://github.com/mwiede/jsch) SSH library and the
+  [`org.bouncycastle:bcprov-jdk18on`](https://www.bouncycastle.org/) provider
+  jars into `app/libs/`
 - compiles Java with `javac`, dexes via `d8`, packages with `aapt2`,
   packages every generated `*.dex`, zip-aligns and signs with `apksigner`
 - writes the result to `release/app-release.apk`
 
 Override the JSch version (and update its checksum in `build-release.sh`) if
 you want to ship a newer SSH library.
+
+BouncyCastle is bundled because Ed25519 identity keys (`id_ed25519`) rely on
+jsch's `com.jcraft.jsch.bc.*` EdDSA classes on Android — jsch's preferred
+JDK 15+ EdDSA implementation lives in the jar's `META-INF/versions/15/`
+multi-release directory, which Android's dex packaging drops. Without the
+provider, Ed25519 key auth fails with `Auth fail for methods 'publickey'`.
 
 ## Offline Ed25519 regression test
 
@@ -73,6 +78,16 @@ you want to ship a newer SSH library.
 This test disables JAR multi-release support to simulate Android, then proves
 an imported Ed25519 identity can sign and verify through JSch's bundled
 BouncyCastle-backed `com.jcraft.jsch.bc.*` implementation.
+
+## Run the tests
+
+```bash
+./run-tests.sh
+```
+
+This compiles and runs the offline Ed25519 unit tests against the same jsch and
+BouncyCastle jars the APK bundles, with the JDK 15+ multi-release classes
+disabled so the Android (Bouncy Castle) code path is exercised.
 
 ## Source layout
 
