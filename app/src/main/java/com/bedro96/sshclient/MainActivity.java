@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.View;
@@ -86,7 +87,8 @@ public final class MainActivity extends Activity {
     /** True while we programmatically reset the terminal text, to suppress echo. */
     private boolean suppressTextWatcher;
     /** Authoritative terminal text as produced by the remote shell. */
-    private final StringBuilder termBuffer = new StringBuilder();
+    private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
+    private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -359,7 +361,7 @@ public final class MainActivity extends Activity {
                     s.connect(15_000);
 
                     ChannelShell ch = (ChannelShell) s.openChannel("shell");
-                    ch.setPtyType("xterm");
+                    ch.setPtyType("xterm-256color");
                     final InputStream in = ch.getInputStream();
                     final OutputStream out = ch.getOutputStream();
                     ch.connect(10_000);
@@ -560,12 +562,34 @@ public final class MainActivity extends Activity {
     private void setStatus(CharSequence s) { txtStatus.setText(s); }
 
     private void appendOutput(CharSequence chunk) {
-        termBuffer.append(chunk);
+        final SpannableStringBuilder rendered = new SpannableStringBuilder();
+        ansiProcessor.process(chunk, new TerminalAnsiProcessor.SegmentConsumer() {
+            @Override public void accept(String text, Integer foregroundRgb, Integer backgroundRgb) {
+                int start = rendered.length();
+                rendered.append(text);
+                int end = rendered.length();
+                if (foregroundRgb != null) {
+                    rendered.setSpan(
+                            new android.text.style.ForegroundColorSpan(0xff000000 | foregroundRgb),
+                            start,
+                            end,
+                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                if (backgroundRgb != null) {
+                    rendered.setSpan(
+                            new android.text.style.BackgroundColorSpan(0xff000000 | backgroundRgb),
+                            start,
+                            end,
+                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
+        });
+        termBuffer.append(rendered);
         if (termBuffer.length() > MAX_OUTPUT_CHARS) {
             termBuffer.delete(0, termBuffer.length() - MAX_OUTPUT_CHARS);
         }
         suppressTextWatcher = true;
-        txtOutput.setText(termBuffer.toString());
+        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
         txtOutput.setSelection(txtOutput.getText().length());
         suppressTextWatcher = false;
         scrollOutput.post(new Runnable() {
@@ -574,7 +598,8 @@ public final class MainActivity extends Activity {
     }
 
     private void clearOutput() {
-        termBuffer.setLength(0);
+        termBuffer.clear();
+        ansiProcessor.reset();
         suppressTextWatcher = true;
         txtOutput.setText("");
         suppressTextWatcher = false;

@@ -15,7 +15,8 @@ without Gradle — it uses the Android SDK command-line tools directly (see
 - Saved host profiles (name, host, port, username, password, identity file)
   selectable from a dropdown for fast reconnect; Save/Delete buttons
 - Import an identity file from device storage into the app (system file picker)
-- Interactive remote shell channel (PTY `xterm`) with live streaming output
+- Interactive remote shell channel (PTY `xterm-256color`) with live streaming
+  output and ANSI 256-color (`38;5;n` / `48;5;n`) rendering
 - Single terminal area — keystrokes are streamed straight to the remote shell
   (no separate command field); remote echo drives the display
 - Special-key toolbar: ESC, TAB, Ctrl+C, Ctrl+D, ▲ ▼ ◀ ▶, Ctrl+A, Ctrl+E,
