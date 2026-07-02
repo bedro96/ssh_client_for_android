@@ -58,6 +58,7 @@ AAPT2="${BUILD_TOOLS_DIR}/aapt2"
 D8="${BUILD_TOOLS_DIR}/d8"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
 APKSIGNER="${BUILD_TOOLS_DIR}/apksigner"
+APP_CATEGORY_PRODUCTIVITY="7"
 BUILD_DIR="$(mktemp -d /tmp/ssh_client_for_android-build.XXXXXX)"
 RELEASE_DIR="${ROOT_DIR}/release"
 KEYSTORE_PATH="${BUILD_DIR}/release.keystore"
@@ -170,5 +171,11 @@ keytool -genkeypair \
   --out "${RELEASE_DIR}/app-release.apk" \
   "${BUILD_DIR}/aligned.apk"
 "${APKSIGNER}" verify "${RELEASE_DIR}/app-release.apk"
+
+if ! "${AAPT2}" dump xmltree --file AndroidManifest.xml "${RELEASE_DIR}/app-release.apk" \
+    | grep -Eq 'appCategory\(.*\)='"${APP_CATEGORY_PRODUCTIVITY}"'$'; then
+  echo "Built APK is missing android:appCategory=\"productivity\" in AndroidManifest.xml" >&2
+  exit 1
+fi
 
 echo "Built ${RELEASE_DIR}/app-release.apk"

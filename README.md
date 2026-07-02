@@ -59,7 +59,13 @@ The script:
   jars into `app/libs/`
 - compiles Java with `javac`, dexes via `d8`, packages with `aapt2`,
   packages every generated `*.dex`, zip-aligns and signs with `apksigner`
+- verifies the packaged `AndroidManifest.xml` declares
+  `android:appCategory="productivity"` in the built APK metadata
 - writes the result to `release/app-release.apk`
+
+If Samsung Gaming Hub / Game Launcher already cached an older install as a
+game, uninstall that copy before reinstalling the rebuilt APK so the launcher
+re-reads the updated app category.
 
 Override the JSch version (and update its checksum in `build-release.sh`) if
 you want to ship a newer SSH library.
