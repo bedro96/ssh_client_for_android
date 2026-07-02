@@ -93,6 +93,8 @@ public final class MainActivity extends Activity {
 
     /** True while we programmatically reset the terminal text, to suppress echo. */
     private boolean suppressTextWatcher;
+    /** Tracks whether the current hardware Tab keypress was consumed by the terminal. */
+    private boolean terminalTabDownHandled;
     /** Authoritative terminal text as produced by the remote shell. */
     private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
     private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
@@ -490,12 +492,15 @@ public final class MainActivity extends Activity {
             @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
                 if (keyCode != KeyEvent.KEYCODE_TAB) { return false; }
                 if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    if (TerminalInputHandler.handleTab(event.isShiftPressed(), terminalSender)) {
-                        txtOutput.requestFocus();
-                        return true;
-                    }
+                    terminalTabDownHandled = TerminalInputHandler.handleTab(event.isShiftPressed(), terminalSender);
+                    return terminalTabDownHandled;
                 }
-                return event.getAction() == KeyEvent.ACTION_UP;
+                if (event.getAction() == KeyEvent.ACTION_UP) {
+                    boolean handled = terminalTabDownHandled;
+                    terminalTabDownHandled = false;
+                    return handled;
+                }
+                return false;
             }
         });
         txtOutput.addTextChangedListener(new TextWatcher() {
