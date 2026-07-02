@@ -16,6 +16,7 @@ import android.text.TextWatcher;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -92,6 +93,8 @@ public final class MainActivity extends Activity {
 
     /** True while we programmatically reset the terminal text, to suppress echo. */
     private boolean suppressTextWatcher;
+    /** Tracks whether the current hardware Tab keypress was consumed by the terminal. */
+    private final TerminalInputHandler.KeyState terminalKeyState = new TerminalInputHandler.KeyState();
     /** Authoritative terminal text as produced by the remote shell. */
     private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
     private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
@@ -482,6 +485,16 @@ public final class MainActivity extends Activity {
     // --------------------------------------------------------- Terminal input
 
     private void wireTerminalInput() {
+        final TerminalInputHandler.Sender terminalSender = new TerminalInputHandler.Sender() {
+            @Override public void send(byte[] bytes) { sendRaw(bytes); }
+        };
+        txtOutput.setOnKeyListener(new View.OnKeyListener() {
+            @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
+                if (keyCode != KeyEvent.KEYCODE_TAB) { return false; }
+                return TerminalInputHandler.handleTabKeyAction(event.getAction(),
+                        event.isShiftPressed(), terminalKeyState, terminalSender);
+            }
+        });
         txtOutput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
