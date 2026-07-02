@@ -43,6 +43,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
@@ -435,12 +436,13 @@ public final class MainActivity extends Activity {
     private void startReader(final InputStream in) {
         Thread t = new Thread(new Runnable() {
             @Override public void run() {
-                Utf8ChunkReader reader = new Utf8ChunkReader(in);
+                byte[] buf = new byte[4096];
                 try {
                     while (!Thread.currentThread().isInterrupted()) {
-                        final String chunk = reader.readChunk();
-                        if (chunk == null) { break; }
-                        if (chunk.length() == 0) { continue; }
+                        int n = in.read(buf);
+                        if (n < 0) { break; }
+                        if (n == 0) { continue; }
+                        final byte[] chunk = Arrays.copyOf(buf, n);
                         ui.post(new Runnable() {
                             @Override public void run() { appendOutput(chunk); }
                         });
@@ -602,6 +604,24 @@ public final class MainActivity extends Activity {
     private void appendOutput(CharSequence chunk) {
         if (chunk == null || chunk.length() == 0) { return; }
         ansiProcessor.process(chunk, new TerminalAnsiProcessor.SegmentConsumer() {
+            @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
+                appendStyledSegment(text, bold, foregroundRgb, backgroundRgb);
+            }
+        });
+        if (termBuffer.length() > MAX_OUTPUT_CHARS) {
+            int overflow = termBuffer.length() - MAX_OUTPUT_CHARS;
+            termBuffer.delete(0, overflow);
+            termCursor = Math.max(0, termCursor - overflow);
+        }
+        renderTermBuffer();
+        scrollOutput.post(new Runnable() {
+            @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
+        });
+    }
+
+    private void appendOutput(byte[] chunk) {
+        if (chunk == null || chunk.length == 0) { return; }
+        ansiProcessor.process(chunk, 0, chunk.length, new TerminalAnsiProcessor.SegmentConsumer() {
             @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
                 appendStyledSegment(text, bold, foregroundRgb, backgroundRgb);
             }

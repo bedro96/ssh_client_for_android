@@ -1,5 +1,6 @@
 package com.bedro96.sshclient;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,6 +24,11 @@ public final class TerminalAnsiProcessorTest {
         testDcsPmApcSosStringsAreDiscarded();
         test8BitDcsPmApcSosStringsAreDiscarded();
         testSplit8BitOscAcrossChunksIsDiscarded();
+        testRawByteOscLeakIsDiscardedAcrossChunks();
+        testRawByteStringPayloadsAreDiscardedAcrossChunks();
+        testRawByte7BitStringControlsStayDiscardedAcrossChunks();
+        testUtf8DecodedC1StillActsAsControl();
+        testRawByteUtf8StillRendersAcrossChunks();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -201,6 +207,102 @@ public final class TerminalAnsiProcessorTest {
         processor.process("\u009d0;azureuser@kukovm: ~/ssh", capture);
         processor.process("_client_for_android\u009cOK", capture);
         assertEquals("OK", joinText(segments), "split 8-bit osc should be discarded");
+    }
+
+    private static void testRawByteOscLeakIsDiscardedAcrossChunks() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        byte[] chunk1 = new byte[] {(byte) 0x9d, '0', ';', 'G', 'i', 't', 'H', 'u'};
+        byte[] chunk2 = new byte[] {'b', ' ', 'C', 'o', 'p', 'i', 'l', 'o', 't', 0x07};
+        byte[] chunk3 = "prompt$ ".getBytes(StandardCharsets.UTF_8);
+
+        processor.process(chunk1, 0, chunk1.length, capture);
+        processor.process(chunk2, 0, chunk2.length, capture);
+        processor.process(chunk3, 0, chunk3.length, capture);
+
+        assertEquals("prompt$ ", joinText(segments),
+                "raw 8-bit osc bytes should not leak 0; title payload");
+    }
+
+    private static void testRawByteStringPayloadsAreDiscardedAcrossChunks() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        byte[] chunk1 = new byte[] {
+                (byte) 0x9d, '1', '0', ';', '?', 0x07,
+                (byte) 0x9d, '1', '1', ';', '#', '0', 'D'
+        };
+        byte[] chunk2 = new byte[] {
+                '1', '1', '1', '7', (byte) 0x9c,
+                (byte) 0x9d, '4', ';', '1', '5', ';', '?', 0x07,
+                (byte) 0x90, 'd', 'c', 's'
+        };
+        byte[] chunk3 = new byte[] {
+                (byte) 0x9c, (byte) 0x9e, 'p', 'm', (byte) 0x9c,
+                (byte) 0x9f, 'a', 'p', 'c', (byte) 0x9c,
+                (byte) 0x98, 's', 'o', 's', (byte) 0x9c,
+                'D', 'O', 'N', 'E'
+        };
+
+        processor.process(chunk1, 0, chunk1.length, capture);
+        processor.process(chunk2, 0, chunk2.length, capture);
+        processor.process(chunk3, 0, chunk3.length, capture);
+
+        assertEquals("DONE", joinText(segments),
+                "raw byte OSC color and string payloads should be consumed");
+    }
+
+    private static void testRawByte7BitStringControlsStayDiscardedAcrossChunks() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        byte[] chunk1 = new byte[] {0x1b, ']', '0', ';', 't', 'i', 't', 'l', 'e', 0x1b};
+        byte[] chunk2 = new byte[] {'\\', 0x1b, 'P', 'd', 'c', 's', 0x1b};
+        byte[] chunk3 = new byte[] {'\\', 'O', 'K'};
+
+        processor.process(chunk1, 0, chunk1.length, capture);
+        processor.process(chunk2, 0, chunk2.length, capture);
+        processor.process(chunk3, 0, chunk3.length, capture);
+
+        assertEquals("OK", joinText(segments),
+                "raw 7-bit OSC/DCS with split ST should stay discarded across chunks");
+    }
+
+    private static void testUtf8DecodedC1StillActsAsControl() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        processor.process(new byte[] {(byte) 0xc2}, 0, 1, capture);
+        processor.process(new byte[] {(byte) 0x9d, '0', ';', 't', 'i', 't', 'l', 'e', 0x07}, 0, 9, capture);
+        processor.process("OK".getBytes(StandardCharsets.UTF_8), 0, 2, capture);
+
+        assertEquals("OK", joinText(segments),
+                "decoded C1 bytes should still enter OSC mode instead of leaking payload text");
+    }
+
+    private static void testRawByteUtf8StillRendersAcrossChunks() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        byte[] prefix = "prefix ".getBytes(StandardCharsets.UTF_8);
+        byte[] osc = new byte[] {(byte) 0x9d, '0', ';', 't', 'i', 't', 'l', 'e', 0x07};
+        byte[] suffix = "한글🙂 suffix".getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = new byte[prefix.length + osc.length + suffix.length];
+        System.arraycopy(prefix, 0, bytes, 0, prefix.length);
+        System.arraycopy(osc, 0, bytes, prefix.length, osc.length);
+        System.arraycopy(suffix, 0, bytes, prefix.length + osc.length, suffix.length);
+        processor.process(bytes, 0, 13, capture);
+        processor.process(bytes, 13, 4, capture);
+        processor.process(bytes, 17, bytes.length - 17, capture);
+
+        assertEquals("prefix 한글🙂 suffix", joinText(segments),
+                "raw byte path should keep split UTF-8 text intact");
     }
 
     private static void assertSegment(
