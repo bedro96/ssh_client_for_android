@@ -59,7 +59,7 @@ The script:
   jars into `app/libs/`
 - compiles Java with `javac`, dexes via `d8`, packages with `aapt2`,
   packages every generated `*.dex`, zip-aligns and signs with `apksigner`
-- verifies the packaged `AndroidManifest.xml` still declares
+- verifies the packaged `AndroidManifest.xml` declares
   `android:appCategory="productivity"` in the built APK metadata
 - writes the result to `release/app-release.apk`
 

@@ -173,7 +173,7 @@ keytool -genkeypair \
 "${APKSIGNER}" verify "${RELEASE_DIR}/app-release.apk"
 
 if ! "${AAPT2}" dump xmltree --file AndroidManifest.xml "${RELEASE_DIR}/app-release.apk" \
-    | grep -Eq "appCategory\\(.*\\)=${APP_CATEGORY_PRODUCTIVITY}$"; then
+    | grep -Eq 'appCategory\(.*\)='"${APP_CATEGORY_PRODUCTIVITY}"'$'; then
   echo "Built APK is missing android:appCategory=\"productivity\" in AndroidManifest.xml" >&2
   exit 1
 fi
