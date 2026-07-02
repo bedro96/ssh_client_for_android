@@ -50,12 +50,7 @@ public final class TerminalAnsiProcessor {
 
     void process(CharSequence chunk, SegmentConsumer consumer) {
         for (int i = 0; i < chunk.length(); i++) {
-            char ch = chunk.charAt(i);
-            if (escapeState == ESCAPE_STATE_TEXT) {
-                processPlainTextChar(ch, consumer);
-                continue;
-            }
-            processEscapeChar(ch);
+            processChar(chunk.charAt(i), consumer);
         }
         flushPendingText(consumer);
     }
@@ -198,6 +193,14 @@ public final class TerminalAnsiProcessor {
         appendUtf8Byte((byte) value);
     }
 
+    private void processChar(char ch, SegmentConsumer consumer) {
+        if (escapeState == ESCAPE_STATE_TEXT) {
+            processPlainTextChar(ch, consumer);
+            return;
+        }
+        processEscapeChar(ch);
+    }
+
     private void processEscapeChar(char ch) {
         if (escapeState == ESCAPE_STATE_AFTER_ESC) {
             if (ch == '[') {
@@ -336,13 +339,9 @@ public final class TerminalAnsiProcessor {
         if (output.position() == 0) {
             return;
         }
-        for (int i = 0; i < output.position(); i++) {
-            char ch = output.get(i);
-            if (escapeState == ESCAPE_STATE_TEXT) {
-                processPlainTextChar(ch, consumer);
-            } else {
-                processEscapeChar(ch);
-            }
+        output.flip();
+        while (output.hasRemaining()) {
+            processChar(output.get(), consumer);
         }
         output.clear();
     }
