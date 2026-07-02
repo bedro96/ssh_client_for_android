@@ -16,6 +16,7 @@ import android.text.TextWatcher;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -482,6 +483,21 @@ public final class MainActivity extends Activity {
     // --------------------------------------------------------- Terminal input
 
     private void wireTerminalInput() {
+        txtOutput.setOnKeyListener(new View.OnKeyListener() {
+            @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
+                if (keyCode != KeyEvent.KEYCODE_TAB) { return false; }
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    if (TerminalInputHandler.handleTab(event.isShiftPressed(),
+                            new TerminalInputHandler.Sender() {
+                                @Override public void send(byte[] bytes) { sendRaw(bytes); }
+                            })) {
+                        txtOutput.requestFocus();
+                        return true;
+                    }
+                }
+                return event.getAction() == KeyEvent.ACTION_UP;
+            }
+        });
         txtOutput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
