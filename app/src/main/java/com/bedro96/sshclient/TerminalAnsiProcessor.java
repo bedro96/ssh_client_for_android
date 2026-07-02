@@ -126,9 +126,6 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_STRING;
                 return;
             }
-            // Re-emit non-CSI escapes (ESC7/ESC8/ESCD/ESCM, etc.) so the
-            // terminal buffer can apply cursor save/restore and scrolling ops.
-            pendingText.append((char) 0x1b).append(ch);
             escapeState = ESCAPE_STATE_TEXT;
             return;
         }
