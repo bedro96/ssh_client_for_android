@@ -12,7 +12,6 @@ final class TerminalInputHandler {
     private TerminalInputHandler() { }
 
     static boolean handleTab(boolean shiftPressed, Sender sender) {
-        if (sender == null) { return false; }
         sender.send(shiftPressed ? BACK_TAB : TAB);
         return true;
     }

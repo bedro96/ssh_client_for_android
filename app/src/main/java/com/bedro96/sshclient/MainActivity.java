@@ -483,14 +483,14 @@ public final class MainActivity extends Activity {
     // --------------------------------------------------------- Terminal input
 
     private void wireTerminalInput() {
+        final TerminalInputHandler.Sender terminalSender = new TerminalInputHandler.Sender() {
+            @Override public void send(byte[] bytes) { sendRaw(bytes); }
+        };
         txtOutput.setOnKeyListener(new View.OnKeyListener() {
             @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
                 if (keyCode != KeyEvent.KEYCODE_TAB) { return false; }
                 if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    if (TerminalInputHandler.handleTab(event.isShiftPressed(),
-                            new TerminalInputHandler.Sender() {
-                                @Override public void send(byte[] bytes) { sendRaw(bytes); }
-                            })) {
+                    if (TerminalInputHandler.handleTab(event.isShiftPressed(), terminalSender)) {
                         txtOutput.requestFocus();
                         return true;
                     }
