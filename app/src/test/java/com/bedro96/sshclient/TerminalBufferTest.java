@@ -10,8 +10,10 @@ public final class TerminalBufferTest {
         testDeleteSequenceViaBackspaceSpaceBackspace();
         testDeleteByteAlsoDeletesPreviousCharacter();
         testBasicShellScrollbackStaysIntact();
+        testLongCatOutputKeepsScrollback();
         testEraseLineVariants();
         testRepeatedSpinnerRepaintStaysOnSingleLine();
+        testCopilotCliFullScreenRepaintStaysStable();
         testAlternateScreenSwapRestoresPrimary();
         testCursorVisibilityModes();
         System.out.println("TERMINAL BUFFER TESTS PASSED");
@@ -46,6 +48,19 @@ public final class TerminalBufferTest {
         assertContains(b.toString(), "file10", "shell scrollback should keep later output");
     }
 
+    private static void testLongCatOutputKeepsScrollback() {
+        StringBuilder b = new StringBuilder();
+        StringBuilder catOutput = new StringBuilder();
+        for (int i = 1; i <= 20; i++) {
+            catOutput.append("line ").append(i).append(" from long cat\r\n");
+        }
+        TerminalBuffer.appendChunk(b, catOutput, 200_000);
+        assertContains(b.toString(), "line 1 from long cat",
+                "long cat output should preserve the earliest lines");
+        assertContains(b.toString(), "line 20 from long cat",
+                "long cat output should preserve the latest lines");
+    }
+
     private static void testEraseLineVariants() {
         StringBuilder b = new StringBuilder();
         TerminalBuffer.appendChunk(b, "abcdef" + ESC + "[4G" + ESC + "[1K", 200_000);
@@ -61,6 +76,22 @@ public final class TerminalBufferTest {
         TerminalBuffer.appendChunk(b, "\r" + ESC + "[2K◉ Loading: 84 skills…", 200_000);
         TerminalBuffer.appendChunk(b, "\r" + ESC + "[2K○ Loading: 84 skills…", 200_000);
         assertEquals("○ Loading: 84 skills…", b.toString(), "repeated redraw should update in-place");
+    }
+
+    private static void testCopilotCliFullScreenRepaintStaysStable() {
+        StringBuilder b = new StringBuilder();
+        TerminalBuffer.appendChunk(b, ESC + "[?1049h" + ESC + "[?25l", 200_000);
+        TerminalBuffer.appendChunk(b, ESC + "[2J" + ESC + "[HGitHub Copilot CLI", 200_000);
+        TerminalBuffer.appendChunk(b,
+                ESC + "[2;1HLoading: 1 skills…" + ESC + "[3;1H◎ Synthesizing...", 200_000);
+        TerminalBuffer.appendChunk(b, ESC + "[2;1H" + ESC + "[2KLoading: 84 skills…", 200_000);
+        TerminalBuffer.appendChunk(b, ESC + "[3;1H" + ESC + "[2K○ Ready", 200_000);
+        TerminalBuffer.appendChunk(b, ESC + "[4;1H> explain this diff", 200_000);
+        assertContains(b.toString(), "GitHub Copilot CLI", "full-screen title should remain visible");
+        assertContains(b.toString(), "Loading: 84 skills…", "full-screen repaint should show only the latest loading state");
+        assertContains(b.toString(), "○ Ready", "full-screen repaint should update status lines in place");
+        assertNotContains(b.toString(), "Loading: 1 skills…", "full-screen repaint should not stack old loading lines");
+        assertNotContains(b.toString(), "◎ Synthesizing...", "full-screen repaint should replace transient status text");
     }
 
     private static void testAlternateScreenSwapRestoresPrimary() {
@@ -90,6 +121,12 @@ public final class TerminalBufferTest {
     private static void assertContains(String actual, String expectedPart, String message) {
         if (actual == null || !actual.contains(expectedPart)) {
             throw new AssertionError("FAILED " + message + ": expected to find <" + expectedPart + "> in <" + actual + ">");
+        }
+    }
+
+    private static void assertNotContains(String actual, String unexpectedPart, String message) {
+        if (actual != null && actual.contains(unexpectedPart)) {
+            throw new AssertionError("FAILED " + message + ": did not expect to find <" + unexpectedPart + "> in <" + actual + ">");
         }
     }
 
