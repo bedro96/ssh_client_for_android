@@ -20,9 +20,11 @@ public final class TerminalAnsiProcessorTest {
         testSplitUnsupportedCsiAcrossChunksIsConsumed();
         testLineEditCsiIsStillReEmittedAsText();
         testSplitLineEditCsiIsReassembledAsText();
+        testNonCsiEscapesAreReEmittedAsText();
         testDcsPmApcSosStringsAreDiscarded();
         test8BitDcsPmApcSosStringsAreDiscarded();
         testSplit8BitOscAcrossChunksIsDiscarded();
+        testTruecolorSgrForegroundAndBackground();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -179,6 +181,14 @@ public final class TerminalAnsiProcessorTest {
                 "split line-edit CSI should be reassembled and re-emitted intact");
     }
 
+    private static void testNonCsiEscapesAreReEmittedAsText() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b7B\u001b8C\u001bDD\u001bME", new Capture(segments));
+        assertEquals("A\u001b7B\u001b8C\u001bDD\u001bME", joinText(segments),
+                "non-CSI escapes should be re-emitted so terminal cursor ops survive parsing");
+    }
+
     private static void testDcsPmApcSosStringsAreDiscarded() {
         TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
         List<Segment> segments = new ArrayList<>();
@@ -201,6 +211,14 @@ public final class TerminalAnsiProcessorTest {
         processor.process("\u009d0;azureuser@kukovm: ~/ssh", capture);
         processor.process("_client_for_android\u009cOK", capture);
         assertEquals("OK", joinText(segments), "split 8-bit osc should be discarded");
+    }
+
+    private static void testTruecolorSgrForegroundAndBackground() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u001b[38;2;17;34;51;48;2;68;85;102mT", new Capture(segments));
+        assertEquals(1, segments.size(), "truecolor sgr segment count");
+        assertSegment(segments.get(0), "T", 0x112233, 0x445566, "truecolor sgr");
     }
 
     private static void assertSegment(

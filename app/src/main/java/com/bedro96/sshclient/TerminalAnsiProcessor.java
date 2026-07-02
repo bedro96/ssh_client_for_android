@@ -126,6 +126,7 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_STRING;
                 return;
             }
+            pendingText.append((char) 0x1b).append(ch);
             escapeState = ESCAPE_STATE_TEXT;
             return;
         }
@@ -230,6 +231,22 @@ public final class TerminalAnsiProcessor {
             return typeIndex;
         }
         if (type == 2) {
+            int redIndex = typeIndex + 1;
+            int greenIndex = typeIndex + 2;
+            int blueIndex = typeIndex + 3;
+            if (blueIndex < tokens.length) {
+                int red = parseToken(tokens[redIndex]);
+                int green = parseToken(tokens[greenIndex]);
+                int blue = parseToken(tokens[blueIndex]);
+                if (isRgbComponent(red) && isRgbComponent(green) && isRgbComponent(blue)) {
+                    int rgb = (red << 16) | (green << 8) | blue;
+                    if (foreground) {
+                        foregroundRgb = rgb;
+                    } else {
+                        backgroundRgb = rgb;
+                    }
+                }
+            }
             return Math.min(typeIndex + 3, tokens.length - 1);
         }
         return typeIndex;
@@ -277,6 +294,10 @@ public final class TerminalAnsiProcessor {
 
     private static boolean isLineEditCsiFinal(char ch) {
         return ch == 'K' || ch == 'G' || ch == 'C' || ch == 'D' || ch == 'H' || ch == 'J';
+    }
+
+    private static boolean isRgbComponent(int value) {
+        return value >= 0 && value <= 255;
     }
 
     private static int parseToken(String token) {

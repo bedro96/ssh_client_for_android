@@ -50,11 +50,13 @@ CP="${JSCH_JAR}:${BCPROV_JAR}"
 javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/Utf8ChunkReader.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalBuffer.java" \
+  "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalScreen.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalAnsiProcessor.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/SshKeyAuth.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshKeyAuthTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/Utf8ChunkReaderTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalBufferTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalScreenTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalAnsiProcessorTest.java"
 
 echo "Running SshKeyAuthTest (multi-release disabled to simulate Android)..."
@@ -70,6 +72,11 @@ echo "Running TerminalBufferTest..."
 java -Djdk.util.jar.enableMultiRelease=false \
   -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.TerminalBufferTest
+
+echo "Running TerminalScreenTest..."
+java -Djdk.util.jar.enableMultiRelease=false \
+  -classpath "${BUILD_DIR}:${CP}" \
+  com.bedro96.sshclient.TerminalScreenTest
 
 echo "Running TerminalAnsiProcessorTest..."
 java -Djdk.util.jar.enableMultiRelease=false \
