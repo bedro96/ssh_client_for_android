@@ -1,5 +1,13 @@
 package com.bedro96.sshclient;
 
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+
 /**
  * Parses ANSI escape sequences and emits plain text segments with current SGR colors.
  * Supports xterm 256-color SGR:
@@ -25,6 +33,12 @@ public final class TerminalAnsiProcessor {
 
     private final StringBuilder pendingText = new StringBuilder();
     private final StringBuilder pendingEscape = new StringBuilder();
+    private final CharsetDecoder utf8Decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE);
+    private byte[] pendingUtf8 = new byte[64];
+    private int pendingUtf8Length;
+    private int pendingUtf8ContinuationBytes;
     private int escapeState = ESCAPE_STATE_TEXT;
     private boolean bold;
     private Integer foregroundRgb;
@@ -46,9 +60,26 @@ public final class TerminalAnsiProcessor {
         flushPendingText(consumer);
     }
 
+    void process(byte[] chunk, int offset, int length, SegmentConsumer consumer) {
+        int end = offset + length;
+        for (int i = offset; i < end; i++) {
+            int value = chunk[i] & 0xff;
+            if (escapeState == ESCAPE_STATE_TEXT) {
+                processPlainTextByte(value, consumer);
+                continue;
+            }
+            processEscapeChar((char) value);
+        }
+        flushPendingUtf8(consumer, false);
+        flushPendingText(consumer);
+    }
+
     void reset() {
         pendingText.setLength(0);
         pendingEscape.setLength(0);
+        pendingUtf8Length = 0;
+        pendingUtf8ContinuationBytes = 0;
+        utf8Decoder.reset();
         escapeState = ESCAPE_STATE_TEXT;
         bold = false;
         foregroundRgb = null;
@@ -108,6 +139,63 @@ public final class TerminalAnsiProcessor {
             return;
         }
         pendingText.append(ch);
+    }
+
+    private void processPlainTextByte(int value, SegmentConsumer consumer) {
+        if (pendingUtf8ContinuationBytes > 0) {
+            appendUtf8Byte((byte) value);
+            if ((value & 0xc0) == 0x80) {
+                pendingUtf8ContinuationBytes--;
+            } else {
+                pendingUtf8ContinuationBytes = 0;
+            }
+            return;
+        }
+        if (value >= 0xc2 && value <= 0xdf) {
+            appendUtf8Byte((byte) value);
+            pendingUtf8ContinuationBytes = 1;
+            return;
+        }
+        if (value >= 0xe0 && value <= 0xef) {
+            appendUtf8Byte((byte) value);
+            pendingUtf8ContinuationBytes = 2;
+            return;
+        }
+        if (value >= 0xf0 && value <= 0xf4) {
+            appendUtf8Byte((byte) value);
+            pendingUtf8ContinuationBytes = 3;
+            return;
+        }
+        if (value == 0x1b) {
+            flushPendingUtf8(consumer, false);
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_AFTER_ESC;
+            return;
+        }
+        if (value == 0x9b) {
+            flushPendingUtf8(consumer, false);
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_CSI;
+            pendingEscape.setLength(0);
+            pendingEscape.append('[');
+            return;
+        }
+        if (value == 0x9d) {
+            flushPendingUtf8(consumer, false);
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_OSC;
+            return;
+        }
+        if (value == 0x90 || value == 0x98 || value == 0x9e || value == 0x9f) {
+            flushPendingUtf8(consumer, false);
+            flushPendingText(consumer);
+            escapeState = ESCAPE_STATE_STRING;
+            return;
+        }
+        if (value == 0x9c) {
+            return;
+        }
+        appendUtf8Byte((byte) value);
     }
 
     private void processEscapeChar(char ch) {
@@ -181,6 +269,75 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_STRING;
             }
         }
+    }
+
+    private void appendUtf8Byte(byte value) {
+        if (pendingUtf8Length == pendingUtf8.length) {
+            byte[] grown = new byte[pendingUtf8.length * 2];
+            System.arraycopy(pendingUtf8, 0, grown, 0, pendingUtf8.length);
+            pendingUtf8 = grown;
+        }
+        pendingUtf8[pendingUtf8Length++] = value;
+    }
+
+    private void flushPendingUtf8(SegmentConsumer consumer, boolean endOfInput) {
+        int decodableLength = endOfInput
+                ? pendingUtf8Length
+                : Math.max(0, pendingUtf8Length - pendingUtf8ContinuationBytes);
+        if (decodableLength == 0) {
+            if (endOfInput) {
+                pendingUtf8ContinuationBytes = 0;
+                utf8Decoder.reset();
+            }
+            return;
+        }
+        ByteBuffer input = ByteBuffer.wrap(pendingUtf8, 0, decodableLength);
+        CharBuffer output = CharBuffer.allocate(Math.max(8, decodableLength));
+        try {
+            utf8Decoder.reset();
+            while (true) {
+                CoderResult result = utf8Decoder.decode(input, output, true);
+                appendDecodedChars(output);
+                if (result.isOverflow()) {
+                    continue;
+                }
+                if (result.isError()) {
+                    result.throwException();
+                }
+                break;
+            }
+            while (true) {
+                CoderResult result = utf8Decoder.flush(output);
+                appendDecodedChars(output);
+                if (result.isOverflow()) {
+                    continue;
+                }
+                if (result.isError()) {
+                    result.throwException();
+                }
+                utf8Decoder.reset();
+                break;
+            }
+        } catch (CharacterCodingException e) {
+            throw new IllegalStateException("UTF-8 decode failed", e);
+        }
+        int remaining = pendingUtf8Length - decodableLength;
+        if (remaining > 0) {
+            System.arraycopy(pendingUtf8, decodableLength, pendingUtf8, 0, remaining);
+        }
+        pendingUtf8Length = remaining;
+        if (endOfInput) {
+            pendingUtf8ContinuationBytes = 0;
+        }
+        flushPendingText(consumer);
+    }
+
+    private void appendDecodedChars(CharBuffer output) {
+        if (output.position() == 0) {
+            return;
+        }
+        pendingText.append(output.array(), 0, output.position());
+        output.clear();
     }
 
     private void applyEscapeSequence(String sequence) {
