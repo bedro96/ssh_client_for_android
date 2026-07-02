@@ -96,10 +96,10 @@ public final class MainActivity extends Activity {
     private boolean suppressTextWatcher;
     /** Tracks whether the current hardware Tab keypress was consumed by the terminal. */
     private final TerminalInputHandler.KeyState terminalKeyState = new TerminalInputHandler.KeyState();
-    /** Authoritative terminal text as produced by the remote shell. */
-    private final SpannableStringBuilder termBuffer = new SpannableStringBuilder();
     private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
-    private int termCursor;
+    private final TerminalScreen terminalScreen = new TerminalScreen();
+    private int terminalRows = TerminalScreen.DEFAULT_ROWS;
+    private int terminalCols = TerminalScreen.DEFAULT_COLS;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -140,6 +140,7 @@ public final class MainActivity extends Activity {
         setupProfiles();
         wireKeyToolbar();
         wireTerminalInput();
+        wireTerminalViewport();
         setTerminalSize(terminalSize);
         txtOutput.setCursorVisible(false);
     }
@@ -374,7 +375,7 @@ public final class MainActivity extends Activity {
                     s.connect(15_000);
 
                     ChannelShell ch = (ChannelShell) s.openChannel("shell");
-                    ch.setPtyType("xterm-256color");
+                    ch.setPtyType("xterm-256color", terminalCols, terminalRows, 0, 0);
                     final InputStream in = ch.getInputStream();
                     final OutputStream out = ch.getOutputStream();
                     ch.connect(10_000);
@@ -393,8 +394,9 @@ public final class MainActivity extends Activity {
                             setConnectionPanelCollapsed(true);
                             keyToolbar.setVisibility(View.VISIBLE);
                             txtOutput.setEnabled(true);
-                            txtOutput.setCursorVisible(true);
                             txtOutput.requestFocus();
+                            updateTerminalGeometry();
+                            reportCurrentPtySize();
                         }
                     });
                 } catch (final Exception e) {
@@ -516,6 +518,24 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void wireTerminalViewport() {
+        View.OnLayoutChangeListener listener = new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                    int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                if (left == oldLeft && top == oldTop && right == oldRight && bottom == oldBottom) {
+                    return;
+                }
+                updateTerminalGeometry();
+            }
+        };
+        txtOutput.addOnLayoutChangeListener(listener);
+        scrollOutput.addOnLayoutChangeListener(listener);
+        txtOutput.post(new Runnable() {
+            @Override public void run() { updateTerminalGeometry(); }
+        });
+    }
+
     private void restoreBuffer() {
         renderTermBuffer();
     }
@@ -526,9 +546,27 @@ public final class MainActivity extends Activity {
      * interactive CLIs that redraw a line in place show a cursor in the right spot.
      */
     private void renderTermBuffer() {
+        TerminalScreen.Snapshot snapshot = terminalScreen.snapshot(MAX_OUTPUT_CHARS);
+        SpannableStringBuilder rendered = new SpannableStringBuilder(snapshot.text);
+        for (TerminalScreen.StyleRun run : snapshot.runs) {
+            if (run.end <= run.start) { continue; }
+            if (run.bold) {
+                rendered.setSpan(new StyleSpan(Typeface.BOLD),
+                        run.start, run.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (run.foregroundRgb != null) {
+                rendered.setSpan(new ForegroundColorSpan(0xff000000 | run.foregroundRgb),
+                        run.start, run.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (run.backgroundRgb != null) {
+                rendered.setSpan(new BackgroundColorSpan(0xff000000 | run.backgroundRgb),
+                        run.start, run.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
         suppressTextWatcher = true;
-        txtOutput.setText(termBuffer, TextView.BufferType.SPANNABLE);
-        txtOutput.setSelection(Math.max(0, Math.min(termCursor, txtOutput.getText().length())));
+        txtOutput.setText(rendered, TextView.BufferType.SPANNABLE);
+        txtOutput.setSelection(Math.max(0, Math.min(snapshot.cursorIndex, txtOutput.getText().length())));
+        txtOutput.setCursorVisible(snapshot.cursorVisible && txtOutput.isEnabled());
         suppressTextWatcher = false;
     }
 
@@ -580,6 +618,9 @@ public final class MainActivity extends Activity {
     private void setTerminalSize(float sp) {
         terminalSize = Math.max(8f, Math.min(28f, sp));
         txtOutput.setTextSize(terminalSize);
+        txtOutput.post(new Runnable() {
+            @Override public void run() { updateTerminalGeometry(); }
+        });
     }
 
     // ---------------------------------------------------------------- Helpers
@@ -605,14 +646,9 @@ public final class MainActivity extends Activity {
         if (chunk == null || chunk.length() == 0) { return; }
         ansiProcessor.process(chunk, new TerminalAnsiProcessor.SegmentConsumer() {
             @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-                appendStyledSegment(text, bold, foregroundRgb, backgroundRgb);
+                terminalScreen.append(text, bold, foregroundRgb, backgroundRgb);
             }
         });
-        if (termBuffer.length() > MAX_OUTPUT_CHARS) {
-            int overflow = termBuffer.length() - MAX_OUTPUT_CHARS;
-            termBuffer.delete(0, overflow);
-            termCursor = Math.max(0, termCursor - overflow);
-        }
         renderTermBuffer();
         scrollOutput.post(new Runnable() {
             @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
@@ -623,180 +659,53 @@ public final class MainActivity extends Activity {
         if (chunk == null || chunk.length == 0) { return; }
         ansiProcessor.process(chunk, 0, chunk.length, new TerminalAnsiProcessor.SegmentConsumer() {
             @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-                appendStyledSegment(text, bold, foregroundRgb, backgroundRgb);
+                terminalScreen.append(text, bold, foregroundRgb, backgroundRgb);
             }
         });
-        if (termBuffer.length() > MAX_OUTPUT_CHARS) {
-            int overflow = termBuffer.length() - MAX_OUTPUT_CHARS;
-            termBuffer.delete(0, overflow);
-            termCursor = Math.max(0, termCursor - overflow);
-        }
         renderTermBuffer();
         scrollOutput.post(new Runnable() {
             @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
         });
     }
-
-    /**
-     * Appends one ANSI-styled segment to the terminal buffer, interpreting
-     * line-edit controls (CR/CSI erase/cursor movement) and backspace/DEL deletes
-     * so remote line editing stays aligned with the on-screen buffer.
-     */
-    private void appendStyledSegment(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == 0x1b && i + 1 < text.length() && text.charAt(i + 1) == '[') {
-                int end = findCsiEnd(text, i + 2);
-                if (end > 0) {
-                    applyStyledCsi(text, i + 2, end);
-                    i = end;
-                    continue;
-                }
-            }
-            if (c == '\r') {
-                termCursor = lineStart(termCursor);
-                continue;
-            }
-            if (c == '\b' || c == 0x7f) {
-                int from = TerminalBuffer.deleteStartIndex(termBuffer, termCursor);
-                if (from < termCursor) {
-                    termBuffer.delete(from, termCursor);
-                    termCursor = from;
-                }
-                continue;
-            }
-            appendStyledCharacter(c, bold, foregroundRgb, backgroundRgb);
-        }
-    }
-
-    private int findCsiEnd(String text, int start) {
-        for (int i = start; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (ch >= 0x40 && ch <= 0x7e) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private void applyStyledCsi(String text, int paramStart, int end) {
-        char command = text.charAt(end);
-        String params = text.substring(paramStart, end);
-        if (command == 'K') {
-            eraseLine(parseCsiNumber(params, 0, 0));
-            return;
-        }
-        if (command == 'J' && parseCsiNumber(params, 0, 0) == 2) {
-            termBuffer.clear();
-            termCursor = 0;
-            return;
-        }
-        if (command == 'H') {
-            termCursor = 0;
-            return;
-        }
-        if (command == 'G') {
-            int column = parseCsiNumber(params, 0, 1);
-            int lineStart = lineStart(termCursor);
-            termCursor = Math.min(lineStart + Math.max(0, column - 1), lineEnd(termCursor));
-            return;
-        }
-        if (command == 'C') {
-            int amount = Math.max(0, parseCsiNumber(params, 0, 1));
-            termCursor = Math.min(termCursor + amount, lineEnd(termCursor));
-            return;
-        }
-        if (command == 'D') {
-            int amount = Math.max(0, parseCsiNumber(params, 0, 1));
-            termCursor = Math.max(termCursor - amount, lineStart(termCursor));
-        }
-    }
-
-    private void appendStyledCharacter(char c, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-        int safeCursor = Math.max(0, Math.min(termCursor, termBuffer.length()));
-        if (safeCursor < termBuffer.length() && termBuffer.charAt(safeCursor) != '\n') {
-            termBuffer.replace(safeCursor, safeCursor + 1, String.valueOf(c));
-        } else {
-            termBuffer.insert(safeCursor, String.valueOf(c));
-        }
-        styleRange(safeCursor, safeCursor + 1, bold, foregroundRgb, backgroundRgb);
-        termCursor = safeCursor + 1;
-    }
-
-    private void eraseLine(int mode) {
-        int lineStart = lineStart(termCursor);
-        int lineEnd = lineEnd(termCursor);
-        if (mode == 1) {
-            termBuffer.delete(lineStart, Math.min(termCursor + 1, lineEnd));
-            termCursor = lineStart;
-            return;
-        }
-        if (mode == 2) {
-            termBuffer.delete(lineStart, lineEnd);
-            termCursor = lineStart;
-            return;
-        }
-        termBuffer.delete(Math.min(termCursor, lineEnd), lineEnd);
-        termCursor = Math.min(termCursor, termBuffer.length());
-    }
-
-    private int lineStart(int cursor) {
-        int safeCursor = Math.max(0, Math.min(cursor, termBuffer.length()));
-        for (int i = safeCursor - 1; i >= 0; i--) {
-            if (termBuffer.charAt(i) == '\n') {
-                return i + 1;
-            }
-        }
-        return 0;
-    }
-
-    private int lineEnd(int cursor) {
-        int safeCursor = Math.max(0, Math.min(cursor, termBuffer.length()));
-        for (int i = safeCursor; i < termBuffer.length(); i++) {
-            if (termBuffer.charAt(i) == '\n') {
-                return i;
-            }
-        }
-        return termBuffer.length();
-    }
-
-    private static int parseCsiNumber(String params, int index, int defaultValue) {
-        if (TextUtils.isEmpty(params)) {
-            return defaultValue;
-        }
-        String[] parts = params.split(";", -1);
-        if (index >= parts.length || TextUtils.isEmpty(parts[index])) {
-            return defaultValue;
-        }
-        try {
-            return Integer.parseInt(parts[index]);
-        } catch (NumberFormatException ignored) {
-            return defaultValue;
-        }
-    }
-
-    private void styleRange(int start, int end, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-        if (end <= start) { return; }
-        if (bold) {
-            termBuffer.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        if (foregroundRgb != null) {
-            termBuffer.setSpan(new ForegroundColorSpan(0xff000000 | foregroundRgb),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        if (backgroundRgb != null) {
-            termBuffer.setSpan(new BackgroundColorSpan(0xff000000 | backgroundRgb),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-    }
-
     private void clearOutput() {
-        termBuffer.clear();
-        termCursor = 0;
+        terminalScreen.reset();
         ansiProcessor.reset();
         suppressTextWatcher = true;
-        txtOutput.setText("");
         txtOutput.setCursorVisible(false);
+        txtOutput.setText("");
         suppressTextWatcher = false;
+        renderTermBuffer();
+    }
+
+    private void updateTerminalGeometry() {
+        int usableWidth = txtOutput.getWidth() - txtOutput.getPaddingLeft() - txtOutput.getPaddingRight();
+        int usableHeight = scrollOutput.getHeight() - scrollOutput.getPaddingTop() - scrollOutput.getPaddingBottom();
+        float charWidth = txtOutput.getPaint().measureText("W");
+        int lineHeight = txtOutput.getLineHeight();
+        if (usableWidth <= 0 || usableHeight <= 0 || charWidth <= 0f || lineHeight <= 0) {
+            return;
+        }
+        int cols = Math.max(1, (int) (usableWidth / charWidth));
+        int rows = Math.max(1, usableHeight / lineHeight);
+        if (cols == terminalCols && rows == terminalRows) {
+            return;
+        }
+        terminalCols = cols;
+        terminalRows = rows;
+        terminalScreen.resize(rows, cols);
+        renderTermBuffer();
+        reportCurrentPtySize();
+    }
+
+    private void reportCurrentPtySize() {
+        final ChannelShell ch = channel;
+        if (ch == null || !ch.isConnected()) {
+            return;
+        }
+        final int cols = terminalCols;
+        final int rows = terminalRows;
+        io.submit(new Runnable() {
+            @Override public void run() { ch.setPtySize(cols, rows, 0, 0); }
+        });
     }
 }

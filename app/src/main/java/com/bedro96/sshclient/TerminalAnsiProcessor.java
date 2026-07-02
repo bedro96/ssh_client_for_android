@@ -38,7 +38,6 @@ public final class TerminalAnsiProcessor {
             .onUnmappableCharacter(CodingErrorAction.REPLACE);
     private byte[] pendingUtf8 = new byte[64];
     private int pendingUtf8Length;
-    private int pendingUtf8ContinuationBytes;
     private int escapeState = ESCAPE_STATE_TEXT;
     private boolean bold;
     private Integer foregroundRgb;
@@ -73,7 +72,6 @@ public final class TerminalAnsiProcessor {
         pendingText.setLength(0);
         pendingEscape.setLength(0);
         pendingUtf8Length = 0;
-        pendingUtf8ContinuationBytes = 0;
         utf8Decoder.reset();
         escapeState = ESCAPE_STATE_TEXT;
         bold = false;
@@ -137,38 +135,33 @@ public final class TerminalAnsiProcessor {
     }
 
     private void processPlainTextByte(int value, SegmentConsumer consumer) {
-        if (pendingUtf8ContinuationBytes > 0) {
-            appendUtf8Byte((byte) value);
+        if (trailingIncompleteUtf8Bytes() > 0) {
             if ((value & 0xc0) == 0x80) {
-                pendingUtf8ContinuationBytes--;
-            } else {
-                pendingUtf8ContinuationBytes = 0;
+                appendUtf8Byte((byte) value);
+                return;
             }
-            return;
+            flushPendingUtf8(consumer, true);
         }
         if (value >= 0xc2 && value <= 0xdf) {
             appendUtf8Byte((byte) value);
-            pendingUtf8ContinuationBytes = 1;
             return;
         }
         if (value >= 0xe0 && value <= 0xef) {
             appendUtf8Byte((byte) value);
-            pendingUtf8ContinuationBytes = 2;
             return;
         }
         if (value >= 0xf0 && value <= 0xf4) {
             appendUtf8Byte((byte) value);
-            pendingUtf8ContinuationBytes = 3;
             return;
         }
         if (value == 0x1b) {
-            flushPendingUtf8(consumer, false);
+            flushPendingUtf8(consumer, true);
             flushPendingText(consumer);
             escapeState = ESCAPE_STATE_AFTER_ESC;
             return;
         }
         if (value == 0x9b) {
-            flushPendingUtf8(consumer, false);
+            flushPendingUtf8(consumer, true);
             flushPendingText(consumer);
             escapeState = ESCAPE_STATE_CSI;
             pendingEscape.setLength(0);
@@ -176,13 +169,13 @@ public final class TerminalAnsiProcessor {
             return;
         }
         if (value == 0x9d) {
-            flushPendingUtf8(consumer, false);
+            flushPendingUtf8(consumer, true);
             flushPendingText(consumer);
             escapeState = ESCAPE_STATE_OSC;
             return;
         }
         if (value == 0x90 || value == 0x98 || value == 0x9e || value == 0x9f) {
-            flushPendingUtf8(consumer, false);
+            flushPendingUtf8(consumer, true);
             flushPendingText(consumer);
             escapeState = ESCAPE_STATE_STRING;
             return;
@@ -217,6 +210,7 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_STRING;
                 return;
             }
+            pendingText.append((char) 0x1b).append(ch);
             escapeState = ESCAPE_STATE_TEXT;
             return;
         }
@@ -286,12 +280,9 @@ public final class TerminalAnsiProcessor {
     private void flushPendingUtf8(SegmentConsumer consumer, boolean endOfInput) {
         int decodableLength = endOfInput
                 ? pendingUtf8Length
-                : Math.max(0, pendingUtf8Length - pendingUtf8ContinuationBytes);
+                : pendingUtf8Length - trailingIncompleteUtf8Bytes();
         if (decodableLength == 0) {
-            if (endOfInput) {
-                pendingUtf8ContinuationBytes = 0;
-                utf8Decoder.reset();
-            }
+            if (endOfInput) { utf8Decoder.reset(); }
             return;
         }
         ByteBuffer input = ByteBuffer.wrap(pendingUtf8, 0, decodableLength);
@@ -329,10 +320,39 @@ public final class TerminalAnsiProcessor {
             System.arraycopy(pendingUtf8, decodableLength, pendingUtf8, 0, remaining);
         }
         pendingUtf8Length = remaining;
-        if (endOfInput) {
-            pendingUtf8ContinuationBytes = 0;
-        }
         flushPendingText(consumer);
+    }
+
+    private int trailingIncompleteUtf8Bytes() {
+        if (pendingUtf8Length == 0) {
+            return 0;
+        }
+        int lastIndex = pendingUtf8Length - 1;
+        while (lastIndex >= 0 && (pendingUtf8[lastIndex] & 0xc0) == 0x80) {
+            lastIndex--;
+        }
+        if (lastIndex < 0) {
+            return 0;
+        }
+        int expectedLength = utf8SequenceLength(pendingUtf8[lastIndex] & 0xff);
+        if (expectedLength <= 1) {
+            return 0;
+        }
+        int actualLength = pendingUtf8Length - lastIndex;
+        return actualLength < expectedLength ? actualLength : 0;
+    }
+
+    private static int utf8SequenceLength(int value) {
+        if (value >= 0xc2 && value <= 0xdf) {
+            return 2;
+        }
+        if (value >= 0xe0 && value <= 0xef) {
+            return 3;
+        }
+        if (value >= 0xf0 && value <= 0xf4) {
+            return 4;
+        }
+        return 1;
     }
 
     private void appendDecodedChars(CharBuffer output, SegmentConsumer consumer) {
@@ -393,6 +413,22 @@ public final class TerminalAnsiProcessor {
             return typeIndex;
         }
         if (type == 2) {
+            int redIndex = typeIndex + 1;
+            int greenIndex = typeIndex + 2;
+            int blueIndex = typeIndex + 3;
+            if (blueIndex < tokens.length) {
+                int red = parseToken(tokens[redIndex]);
+                int green = parseToken(tokens[greenIndex]);
+                int blue = parseToken(tokens[blueIndex]);
+                if (isRgbComponent(red) && isRgbComponent(green) && isRgbComponent(blue)) {
+                    int rgb = (red << 16) | (green << 8) | blue;
+                    if (foreground) {
+                        foregroundRgb = rgb;
+                    } else {
+                        backgroundRgb = rgb;
+                    }
+                }
+            }
             return Math.min(typeIndex + 3, tokens.length - 1);
         }
         return typeIndex;
@@ -440,6 +476,10 @@ public final class TerminalAnsiProcessor {
 
     private static boolean isLineEditCsiFinal(char ch) {
         return ch == 'K' || ch == 'G' || ch == 'C' || ch == 'D' || ch == 'H' || ch == 'J';
+    }
+
+    private static boolean isRgbComponent(int value) {
+        return value >= 0 && value <= 255;
     }
 
     private static int parseToken(String token) {
