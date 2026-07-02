@@ -297,7 +297,7 @@ public final class TerminalAnsiProcessor {
             utf8Decoder.reset();
             while (true) {
                 CoderResult result = utf8Decoder.decode(input, output, true);
-                appendDecodedChars(output);
+                appendDecodedChars(output, consumer);
                 if (result.isOverflow()) {
                     continue;
                 }
@@ -308,7 +308,7 @@ public final class TerminalAnsiProcessor {
             }
             while (true) {
                 CoderResult result = utf8Decoder.flush(output);
-                appendDecodedChars(output);
+                appendDecodedChars(output, consumer);
                 if (result.isOverflow()) {
                     continue;
                 }
@@ -332,11 +332,18 @@ public final class TerminalAnsiProcessor {
         flushPendingText(consumer);
     }
 
-    private void appendDecodedChars(CharBuffer output) {
+    private void appendDecodedChars(CharBuffer output, SegmentConsumer consumer) {
         if (output.position() == 0) {
             return;
         }
-        pendingText.append(output.array(), 0, output.position());
+        for (int i = 0; i < output.position(); i++) {
+            char ch = output.get(i);
+            if (escapeState == ESCAPE_STATE_TEXT) {
+                processPlainTextChar(ch, consumer);
+            } else {
+                processEscapeChar(ch);
+            }
+        }
         output.clear();
     }
 

@@ -26,6 +26,8 @@ public final class TerminalAnsiProcessorTest {
         testSplit8BitOscAcrossChunksIsDiscarded();
         testRawByteOscLeakIsDiscardedAcrossChunks();
         testRawByteStringPayloadsAreDiscardedAcrossChunks();
+        testRawByte7BitStringControlsStayDiscardedAcrossChunks();
+        testUtf8DecodedC1StillActsAsControl();
         testRawByteUtf8StillRendersAcrossChunks();
         System.out.println("ALL TESTS PASSED");
     }
@@ -251,6 +253,36 @@ public final class TerminalAnsiProcessorTest {
 
         assertEquals("DONE", joinText(segments),
                 "raw byte OSC color and string payloads should be consumed");
+    }
+
+    private static void testRawByte7BitStringControlsStayDiscardedAcrossChunks() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        byte[] chunk1 = new byte[] {0x1b, ']', '0', ';', 't', 'i', 't', 'l', 'e', 0x1b};
+        byte[] chunk2 = new byte[] {'\\', 0x1b, 'P', 'd', 'c', 's', 0x1b};
+        byte[] chunk3 = new byte[] {'\\', 'O', 'K'};
+
+        processor.process(chunk1, 0, chunk1.length, capture);
+        processor.process(chunk2, 0, chunk2.length, capture);
+        processor.process(chunk3, 0, chunk3.length, capture);
+
+        assertEquals("OK", joinText(segments),
+                "raw 7-bit OSC/DCS with split ST should stay discarded across chunks");
+    }
+
+    private static void testUtf8DecodedC1StillActsAsControl() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        processor.process(new byte[] {(byte) 0xc2}, 0, 1, capture);
+        processor.process(new byte[] {(byte) 0x9d, '0', ';', 't', 'i', 't', 'l', 'e', 0x07}, 0, 9, capture);
+        processor.process("OK".getBytes(StandardCharsets.UTF_8), 0, 2, capture);
+
+        assertEquals("OK", joinText(segments),
+                "decoded C1 bytes should still enter OSC mode instead of leaking payload text");
     }
 
     private static void testRawByteUtf8StillRendersAcrossChunks() {
