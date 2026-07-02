@@ -16,7 +16,10 @@ public final class TerminalScreenTest {
         testAlternateScreenSwapRestoresPrimary();
         testScrollRegionAndIndexBehavior();
         testRepeatedSpinnerRepaintStaysOnSingleLine();
+        testTmuxStyleAlternateScreenRedrawRestoresShell();
+        testCopilotCliStyleFullScreenRepaintStaysStable();
         testBasicShellScrollbackAndLineEditing();
+        testLongCatScrollbackPreservesEarlyAndLateLines();
         testCursorVisibilityModes();
         testTruecolorStyleOverwrite();
         System.out.println("TERMINAL SCREEN TESTS PASSED");
@@ -107,6 +110,56 @@ public final class TerminalScreenTest {
                 "spinner repaint should update a single visible line in place");
     }
 
+    private static void testTmuxStyleAlternateScreenRedrawRestoresShell() {
+        TerminalScreen screen = new TerminalScreen(6, 24);
+        screen.append("shell output\r\nprompt$ ");
+        screen.append(ESC + "[?1049h" + ESC + "[2J" + ESC + "[H");
+        screen.append("pane1" + ESC + "[1;13Hpane2");
+        screen.append(ESC + "[2;1Hleft$ ls" + ESC + "[2;13Hright$ pwd");
+        screen.append(ESC + "[3;1Hfile-a" + ESC + "[3;13H/home/u");
+        screen.append(ESC + "[6;1H[tmux 1]");
+        screen.append(ESC + "[3;1H" + ESC + "[2Kfile-a file-b");
+        screen.append(ESC + "[6;1H" + ESC + "[2K[tmux 2]");
+
+        String tmux = screen.snapshot(200_000).text;
+        assertContains(tmux, "pane1", "tmux redraw should preserve the left pane");
+        assertContains(tmux, "pane2", "tmux redraw should preserve the right pane");
+        assertContains(tmux, "left$ ls", "tmux redraw should preserve pane command text");
+        assertContains(tmux, "right$ pwd", "tmux redraw should preserve split-pane content");
+        assertContains(tmux, "file-a file-b", "tmux redraw should repaint pane content in place");
+        assertContains(tmux, "[tmux 2]", "tmux redraw should update the status bar in place");
+        assertNotContains(tmux, "[tmux 1]", "tmux redraw should not leave stale status bars behind");
+
+        screen.append(ESC + "[?1049l");
+        assertEquals("shell output\nprompt$", screen.snapshot(200_000).text,
+                "quitting tmux should restore the primary shell screen");
+    }
+
+    private static void testCopilotCliStyleFullScreenRepaintStaysStable() {
+        TerminalScreen screen = new TerminalScreen(6, 32);
+        screen.append(ESC + "[?1049h" + ESC + "[?25l");
+        screen.append(ESC + "[2J" + ESC + "[HGitHub Copilot CLI");
+        screen.append(ESC + "[2;1HLoading: 1 skills…" + ESC + "[3;1H◎ Synthesizing...");
+        screen.append(ESC + "[2;1H" + ESC + "[2KLoading: 84 skills…");
+        screen.append(ESC + "[3;1H" + ESC + "[2K○ Ready");
+        screen.append(ESC + "[4;1H> explain this diff");
+
+        TerminalScreen.Snapshot snapshot = screen.snapshot(200_000);
+        assertFalse(snapshot.cursorVisible, "Copilot CLI full-screen mode should hide the cursor");
+        assertContains(snapshot.text, "GitHub Copilot CLI",
+                "Copilot CLI title should remain visible after redraws");
+        assertContains(snapshot.text, "Loading: 84 skills…",
+                "Copilot CLI should show the latest loading state");
+        assertContains(snapshot.text, "○ Ready",
+                "Copilot CLI should repaint status lines in place");
+        assertContains(snapshot.text, "> explain this diff",
+                "Copilot CLI prompt should remain on the current screen");
+        assertNotContains(snapshot.text, "Loading: 1 skills…",
+                "Copilot CLI redraw should not leave stale loading lines behind");
+        assertNotContains(snapshot.text, "◎ Synthesizing...",
+                "Copilot CLI redraw should replace older transient status text");
+    }
+
     private static void testBasicShellScrollbackAndLineEditing() {
         TerminalScreen screen = new TerminalScreen(4, 40);
         StringBuilder lsOutput = new StringBuilder();
@@ -129,6 +182,20 @@ public final class TerminalScreenTest {
         screen.append("o");
         assertContains(screen.snapshot(200_000).text, "prompt$ helo",
                 "backspace-space-backspace editing should stay aligned");
+    }
+
+    private static void testLongCatScrollbackPreservesEarlyAndLateLines() {
+        TerminalScreen screen = new TerminalScreen(4, 32);
+        StringBuilder catOutput = new StringBuilder();
+        for (int i = 1; i <= 20; i++) {
+            catOutput.append("line ").append(i).append(" from long cat\r\n");
+        }
+        screen.append(catOutput);
+        String rendered = screen.snapshot(200_000).text;
+        assertContains(rendered, "line 1 from long cat",
+                "long cat output should preserve the earliest lines in scrollback");
+        assertContains(rendered, "line 20 from long cat",
+                "long cat output should preserve the latest lines in scrollback");
     }
 
     private static void testCursorVisibilityModes() {
@@ -164,6 +231,12 @@ public final class TerminalScreenTest {
     private static void assertContains(String actual, String expectedPart, String message) {
         if (actual == null || !actual.contains(expectedPart)) {
             throw new AssertionError("FAILED " + message + ": expected to find <" + expectedPart + "> in <" + actual + ">");
+        }
+    }
+
+    private static void assertNotContains(String actual, String unexpectedPart, String message) {
+        if (actual != null && actual.contains(unexpectedPart)) {
+            throw new AssertionError("FAILED " + message + ": did not expect to find <" + unexpectedPart + "> in <" + actual + ">");
         }
     }
 
