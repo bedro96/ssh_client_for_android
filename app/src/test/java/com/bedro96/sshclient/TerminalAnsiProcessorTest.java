@@ -21,6 +21,7 @@ public final class TerminalAnsiProcessorTest {
         testSplitUnsupportedCsiAcrossChunksIsConsumed();
         testLineEditCsiIsStillReEmittedAsText();
         testSplitLineEditCsiIsReassembledAsText();
+        testNonCsiEscapesAreReEmittedAsText();
         testDcsPmApcSosStringsAreDiscarded();
         test8BitDcsPmApcSosStringsAreDiscarded();
         testSplit8BitOscAcrossChunksIsDiscarded();
@@ -29,6 +30,7 @@ public final class TerminalAnsiProcessorTest {
         testRawByte7BitStringControlsStayDiscardedAcrossChunks();
         testUtf8DecodedC1StillActsAsControl();
         testRawByteUtf8StillRendersAcrossChunks();
+        testTruecolorSgrForegroundAndBackground();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -185,6 +187,14 @@ public final class TerminalAnsiProcessorTest {
                 "split line-edit CSI should be reassembled and re-emitted intact");
     }
 
+    private static void testNonCsiEscapesAreReEmittedAsText() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b7B\u001b8C\u001bDD\u001bME", new Capture(segments));
+        assertEquals("A\u001b7B\u001b8C\u001bDD\u001bME", joinText(segments),
+                "non-CSI escapes should be re-emitted so terminal cursor ops survive parsing");
+    }
+
     private static void testDcsPmApcSosStringsAreDiscarded() {
         TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
         List<Segment> segments = new ArrayList<>();
@@ -303,6 +313,14 @@ public final class TerminalAnsiProcessorTest {
 
         assertEquals("prefix 한글🙂 suffix", joinText(segments),
                 "raw byte path should keep split UTF-8 text intact");
+    }
+
+    private static void testTruecolorSgrForegroundAndBackground() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("\u001b[38;2;17;34;51;48;2;68;85;102mT", new Capture(segments));
+        assertEquals(1, segments.size(), "truecolor sgr segment count");
+        assertSegment(segments.get(0), "T", 0x112233, 0x445566, "truecolor sgr");
     }
 
     private static void assertSegment(
