@@ -30,6 +30,8 @@ public final class TerminalAnsiProcessorTest {
         testRawByte7BitStringControlsStayDiscardedAcrossChunks();
         testUtf8DecodedC1StillActsAsControl();
         testRawByteUtf8StillRendersAcrossChunks();
+        testCompleteUtf8SequenceBeforeTrailingPartialStillDecodes();
+        testIncompleteUtf8SequenceDoesNotCrossIntoControls();
         testTruecolorSgrForegroundAndBackground();
         System.out.println("ALL TESTS PASSED");
     }
@@ -313,6 +315,39 @@ public final class TerminalAnsiProcessorTest {
 
         assertEquals("prefix 한글🙂 suffix", joinText(segments),
                 "raw byte path should keep split UTF-8 text intact");
+    }
+
+    private static void testCompleteUtf8SequenceBeforeTrailingPartialStillDecodes() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        byte[] smileAndPrefixOfSnowman = new byte[] {
+                (byte) 0xf0, (byte) 0x9f, (byte) 0x99, (byte) 0x82,
+                (byte) 0xe2
+        };
+        byte[] remainderOfSnowman = new byte[] {(byte) 0x98, (byte) 0x83};
+
+        processor.process(smileAndPrefixOfSnowman, 0, smileAndPrefixOfSnowman.length, capture);
+        assertEquals("🙂", joinText(segments),
+                "complete UTF-8 before a trailing partial sequence should decode immediately");
+
+        processor.process(remainderOfSnowman, 0, remainderOfSnowman.length, capture);
+        assertEquals("🙂☃", joinText(segments),
+                "trailing partial UTF-8 should resume on the next chunk");
+    }
+
+    private static void testIncompleteUtf8SequenceDoesNotCrossIntoControls() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        processor.process(new byte[] {(byte) 0xe2}, 0, 1, capture);
+        processor.process(new byte[] {0x1b, ']', '0', ';', 't', 'i', 't', 'l', 'e', 0x07}, 0, 10, capture);
+        processor.process("OK".getBytes(StandardCharsets.UTF_8), 0, 2, capture);
+
+        assertEquals("\ufffdOK", joinText(segments),
+                "an incomplete UTF-8 sequence should flush before an escape control");
     }
 
     private static void testTruecolorSgrForegroundAndBackground() {
