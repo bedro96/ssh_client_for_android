@@ -506,7 +506,7 @@ public final class MainActivity extends Activity {
                 if (count > before) {
                     // Characters typed or pasted: forward them to the remote shell.
                     String typed = s.subSequence(start + before, start + count).toString();
-                    sendRaw(typed.getBytes(UTF8));
+                    TerminalInputHandler.handleTypedText(typed, terminalSender);
                 } else if (before > count) {
                     // A delete/backspace: forward one DEL so the remote handles it.
                     sendRaw(new byte[] {0x7f});
