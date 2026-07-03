@@ -13,7 +13,7 @@ final class TerminalGeometry {
      * is a little shorter than the raw viewport. Requested by users who prefer a
      * larger effective cell / bigger fonts and some breathing room at the bottom.
      */
-    static final int ROW_RESERVE = 8;
+    static final int ROW_RESERVE = 6;
 
     private TerminalGeometry() { }
 

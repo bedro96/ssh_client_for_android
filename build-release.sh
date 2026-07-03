@@ -62,7 +62,7 @@ APP_CATEGORY_PRODUCTIVITY="7"
 BUILD_DIR="$(mktemp -d /tmp/ssh_client_for_android-build.XXXXXX)"
 RELEASE_DIR="${ROOT_DIR}/release"
 KEYSTORE_PATH="${BUILD_DIR}/release.keystore"
-KEYSTORE_PASSWORD="${RELEASE_KEYSTORE_PASSWORD:-$(python - <<'PY'
+KEYSTORE_PASSWORD="${RELEASE_KEYSTORE_PASSWORD:-$(python3 - <<'PY'
 import secrets
 import string
 alphabet = string.ascii_letters + string.digits

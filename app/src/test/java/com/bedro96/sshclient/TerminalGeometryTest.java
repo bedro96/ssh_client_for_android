@@ -20,16 +20,16 @@ public final class TerminalGeometryTest {
     }
 
     private static void testRowsFloorsSoTheLastRowIsFullyVisible() {
-        assertEquals(16, TerminalGeometry.rows(480, 20),
-                "24 rows fit; after the 8-line reserve, 16 remain");
-        assertEquals(16, TerminalGeometry.rows(499, 20),
-                "a partial trailing row is floored, then the 8-line reserve is applied");
+        assertEquals(18, TerminalGeometry.rows(480, 20),
+                "24 rows fit; after the 6-line reserve, 18 remain");
+        assertEquals(18, TerminalGeometry.rows(499, 20),
+                "a partial trailing row is floored, then the 6-line reserve is applied");
     }
 
     private static void testRowsReserveLeavesHeadroomForBiggerFonts() {
-        assertEquals(30, TerminalGeometry.rows(38 * 20, 20),
-                "rows should reserve 8 lines below the number that physically fit");
-        assertEquals(1, TerminalGeometry.rows(9 * 20, 20),
+        assertEquals(32, TerminalGeometry.rows(38 * 20, 20),
+                "rows should reserve 6 lines below the number that physically fit");
+        assertEquals(1, TerminalGeometry.rows(5 * 20, 20),
                 "when fewer rows fit than the reserve, rows must still be at least 1");
     }
 
