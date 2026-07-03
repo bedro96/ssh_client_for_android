@@ -30,7 +30,10 @@ final class TerminalInputHandler {
      */
     static boolean handleTypedText(String text, Sender sender) {
         if (text == null || text.isEmpty()) { return false; }
-        sender.send(text.getBytes(UTF8));
+        // The Enter key (and pasted newlines) arrive as LF (0x0a), but a terminal
+        // sends CR (0x0d) for Enter. Cooked-mode shells tolerate LF, but raw-mode
+        // TUIs (e.g. the GitHub Copilot CLI) only accept CR, so translate here.
+        sender.send(text.replace('\n', '\r').getBytes(UTF8));
         return true;
     }
 

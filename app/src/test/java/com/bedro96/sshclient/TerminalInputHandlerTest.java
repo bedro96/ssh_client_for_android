@@ -15,6 +15,8 @@ public final class TerminalInputHandlerTest {
         testSpaceSendsSpaceByte();
         testTypedTextSendsUtf8Bytes();
         testEmptyTextSendsNothing();
+        testEnterSendsCarriageReturn();
+        testNewlinesInPasteBecomeCarriageReturns();
         System.out.println("TERMINAL INPUT HANDLER TESTS PASSED");
     }
 
@@ -86,6 +88,21 @@ public final class TerminalInputHandlerTest {
         assertFalse(TerminalInputHandler.handleTypedText("", capture),
                 "empty text should not be consumed");
         assertEquals(0, capture.sendCount, "empty text should not send bytes");
+    }
+
+    private static void testEnterSendsCarriageReturn() {
+        Capture capture = new Capture();
+        assertTrue(TerminalInputHandler.handleTypedText("\n", capture),
+                "enter should be consumed");
+        assertArrayEquals(new byte[] {0x0d}, capture.bytes,
+                "Enter (newline) must be sent as CR 0x0d so raw-mode TUIs (e.g. Copilot CLI) receive it");
+    }
+
+    private static void testNewlinesInPasteBecomeCarriageReturns() {
+        Capture capture = new Capture();
+        TerminalInputHandler.handleTypedText("a\nb", capture);
+        assertArrayEquals(new byte[] {'a', 0x0d, 'b'}, capture.bytes,
+                "newlines inside typed/pasted text should each become CR");
     }
 
     private static void assertTrue(boolean value, String message) {
