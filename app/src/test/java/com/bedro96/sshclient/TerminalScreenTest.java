@@ -14,6 +14,7 @@ public final class TerminalScreenTest {
         testEraseLineVariants();
         testEraseDisplayVariants();
         testAlternateScreenSwapRestoresPrimary();
+        testAlternateScreenHidesPrimaryScrollback();
         testScrollRegionAndIndexBehavior();
         testRepeatedSpinnerRepaintStaysOnSingleLine();
         testTmuxStyleAlternateScreenRedrawRestoresShell();
@@ -89,6 +90,29 @@ public final class TerminalScreenTest {
         screen.append(ESC + "[?1049l");
         assertEquals("shell output\nprompt$ ", screen.snapshot(200_000).text,
                 "leaving alternate screen should restore the primary buffer");
+    }
+
+    private static void testAlternateScreenHidesPrimaryScrollback() {
+        // A short primary screen whose output overflows into scrollback, exactly
+        // like a login shell printing a multi-line MOTD before a full-screen TUI
+        // (tmux / GitHub Copilot CLI) switches to the alternate screen.
+        TerminalScreen screen = new TerminalScreen(3, 8);
+        screen.append("L1\r\nL2\r\nL3\r\nL4\r\nL5");
+        String primaryBefore = screen.snapshot(200_000).text;
+        assertContains(primaryBefore, "L1", "primary output should spill into scrollback");
+        assertContains(primaryBefore, "L5", "primary output should keep the latest line");
+
+        screen.append(ESC + "[?1049h" + ESC + "[2J" + ESC + "[H" + "ALT");
+        String alt = screen.snapshot(200_000).text;
+        assertEquals("ALT", alt,
+                "alternate screen must show only its own buffer, not the primary scrollback");
+
+        screen.append(ESC + "[?1049l");
+        String primaryAfter = screen.snapshot(200_000).text;
+        assertContains(primaryAfter, "L1",
+                "leaving the alternate screen should restore the primary scrollback");
+        assertContains(primaryAfter, "L5",
+                "leaving the alternate screen should restore the primary screen content");
     }
 
     private static void testScrollRegionAndIndexBehavior() {

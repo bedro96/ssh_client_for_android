@@ -239,11 +239,14 @@ public final class TerminalAnsiProcessor {
             if (ch >= 0x40 && ch <= 0x7e) {
                 if (ch == 'm') {
                     applyEscapeSequence(pendingEscape.toString());
-                } else if (isLineEditCsiFinal(ch)) {
-                    // Re-emit cursor/erase CSI (e.g. CR redraws: ESC[K, ESC[G, ESC[C/D)
-                    // as literal text so the terminal buffer can interpret them for
-                    // in-place line redraws. Reassembled here so split-chunk sequences
-                    // reach the buffer intact.
+                } else {
+                    // Re-emit every non-SGR CSI as literal text so the VT100 grid
+                    // emulator can interpret it: cursor moves/erases (in-place line
+                    // redraws), mode set/reset (alt-screen ?1049h, cursor ?25l),
+                    // scroll regions, insert/delete, etc. The emulator consumes
+                    // sequences it does not recognise without leaking their params,
+                    // so forwarding everything is safe. Reassembled here so
+                    // split-chunk sequences reach the buffer intact.
                     pendingText.append((char) 0x1b).append(pendingEscape);
                 }
                 pendingEscape.setLength(0);
@@ -502,10 +505,6 @@ public final class TerminalAnsiProcessor {
         if (code >= 100 && code <= 107) {
             backgroundRgb = xterm256IndexToRgb((code - 100) + 8);
         }
-    }
-
-    private static boolean isLineEditCsiFinal(char ch) {
-        return ch == 'K' || ch == 'G' || ch == 'C' || ch == 'D' || ch == 'H' || ch == 'J';
     }
 
     private static boolean isRgbComponent(int value) {

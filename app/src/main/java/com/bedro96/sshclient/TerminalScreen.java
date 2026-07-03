@@ -162,12 +162,19 @@ final class TerminalScreen {
         boolean cursorPlaced = false;
         boolean hasRows = false;
 
-        for (StoredRow rowData : scrollback) {
-            if (hasRows) {
-                text.append('\n');
+        // The alternate screen (tmux, vim, GitHub Copilot CLI) fully replaces the
+        // display: it must render only its own rows, never the primary screen's
+        // scrollback. Leaking scrollback here pushes the alternate rows down and
+        // out of the viewport (bottom lines clipped) and offsets cursor-addressed
+        // repaints, so a spinner/indicator appears to slip onto the next line.
+        if (!useAlternate) {
+            for (StoredRow rowData : scrollback) {
+                if (hasRows) {
+                    text.append('\n');
+                }
+                appendRow(text, runs, rowData);
+                hasRows = true;
             }
-            appendRow(text, runs, rowData);
-            hasRows = true;
         }
 
         int lastVisibleRow = Math.max(active.lastNonBlankRow(), row);

@@ -18,6 +18,7 @@ public final class TerminalAnsiProcessorTest {
         testOscColorQueryAndSetPayloadsAreDiscarded();
         test8BitCsiSgrIsApplied();
         testUnsupportedCsiIsConsumedWithoutLeakingParams();
+        testPrivateModeAndScrollRegionCsiAreForwardedToEmulator();
         testSplitUnsupportedCsiAcrossChunksIsConsumed();
         testLineEditCsiIsStillReEmittedAsText();
         testSplitLineEditCsiIsReassembledAsText();
@@ -160,11 +161,27 @@ public final class TerminalAnsiProcessorTest {
     }
 
     private static void testUnsupportedCsiIsConsumedWithoutLeakingParams() {
+        // The processor forwards CSI verbatim to the VT100 emulator, which consumes
+        // unknown/private sequences without ever rendering their parameters as text.
         TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
         List<Segment> segments = new ArrayList<>();
         processor.process("A\u001b[?111;110lB\u001b[0cC", new Capture(segments));
-        assertEquals("ABC", joinText(segments),
-                "unsupported/private CSI should be consumed without leaking params");
+        TerminalScreen screen = new TerminalScreen(4, 16);
+        screen.append(joinText(segments));
+        assertEquals("ABC", screen.snapshot(200_000).text,
+                "unsupported/private CSI must not leak params as visible text on screen");
+    }
+
+    private static void testPrivateModeAndScrollRegionCsiAreForwardedToEmulator() {
+        // Alt-screen (?1049h), cursor visibility (?25l) and scroll-region (r)
+        // sequences must reach the emulator; otherwise full-screen TUIs like tmux
+        // and GitHub Copilot CLI never switch buffers and their scrollback leaks
+        // in, clipping rows and making the cursor slip lines.
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        processor.process("A\u001b[?1049hB\u001b[?25lC\u001b[2;5rD", new Capture(segments));
+        assertEquals("A\u001b[?1049hB\u001b[?25lC\u001b[2;5rD", joinText(segments),
+                "private-mode and scroll-region CSI must be re-emitted for the emulator");
     }
 
     private static void testSplitUnsupportedCsiAcrossChunksIsConsumed() {
@@ -173,8 +190,10 @@ public final class TerminalAnsiProcessorTest {
         Capture capture = new Capture(segments);
         processor.process("A\u009b?111;", capture);
         processor.process("110lB", capture);
-        assertEquals("AB", joinText(segments),
-                "split unsupported 8-bit csi should be consumed");
+        TerminalScreen screen = new TerminalScreen(4, 16);
+        screen.append(joinText(segments));
+        assertEquals("AB", screen.snapshot(200_000).text,
+                "split unsupported 8-bit csi must not leak params as visible text on screen");
     }
 
     private static void testLineEditCsiIsStillReEmittedAsText() {
