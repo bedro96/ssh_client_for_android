@@ -12,6 +12,9 @@ public final class TerminalInputHandlerTest {
         testTabKeyDownAndUpAreConsumedWithoutDuplicateBytes();
         testShiftTabKeyDownAndUpAreConsumedWithoutDuplicateBytes();
         testTabKeyUpWithoutMatchingDownIsIgnored();
+        testSpaceSendsSpaceByte();
+        testTypedTextSendsUtf8Bytes();
+        testEmptyTextSendsNothing();
         System.out.println("TERMINAL INPUT HANDLER TESTS PASSED");
     }
 
@@ -57,6 +60,32 @@ public final class TerminalInputHandlerTest {
         assertFalse(TerminalInputHandler.handleTabKeyAction(TerminalInputHandler.ACTION_UP,
                 false, keyState, capture), "tab key up should not be consumed without down");
         assertEquals(0, capture.sendCount, "tab key up should not send bytes without down");
+    }
+
+    private static void testSpaceSendsSpaceByte() {
+        Capture capture = new Capture();
+        assertTrue(TerminalInputHandler.handleTypedText(" ", capture),
+                "space should be consumed");
+        assertEquals(1, capture.sendCount, "space should send exactly once");
+        assertArrayEquals(new byte[] {0x20}, capture.bytes, "space should send 0x20");
+    }
+
+    private static void testTypedTextSendsUtf8Bytes() {
+        Capture capture = new Capture();
+        assertTrue(TerminalInputHandler.handleTypedText("ls -al", capture),
+                "typed text should be consumed");
+        assertEquals(1, capture.sendCount, "typed text should send exactly once");
+        assertArrayEquals("ls -al".getBytes(java.nio.charset.Charset.forName("UTF-8")),
+                capture.bytes, "typed text should send correct UTF-8 bytes");
+        // Verify the space in the middle is 0x20
+        assertEquals(0x20, capture.bytes[2] & 0xff, "space in typed text should be 0x20");
+    }
+
+    private static void testEmptyTextSendsNothing() {
+        Capture capture = new Capture();
+        assertFalse(TerminalInputHandler.handleTypedText("", capture),
+                "empty text should not be consumed");
+        assertEquals(0, capture.sendCount, "empty text should not send bytes");
     }
 
     private static void assertTrue(boolean value, String message) {
