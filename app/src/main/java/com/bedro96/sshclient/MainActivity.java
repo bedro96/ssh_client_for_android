@@ -495,9 +495,15 @@ public final class MainActivity extends Activity {
         };
         txtOutput.setOnKeyListener(new View.OnKeyListener() {
             @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
-                if (keyCode != KeyEvent.KEYCODE_TAB) { return false; }
-                return TerminalInputHandler.handleTabKeyAction(event.getAction(),
-                        event.isShiftPressed(), terminalKeyState, terminalSender);
+                if (keyCode == KeyEvent.KEYCODE_TAB) {
+                    return TerminalInputHandler.handleTabKeyAction(event.getAction(),
+                            event.isShiftPressed(), terminalKeyState, terminalSender);
+                }
+                if (TerminalInputHandler.arrowKeySequence(keyCode) != null) {
+                    return TerminalInputHandler.handleArrowKeyAction(event.getAction(),
+                            keyCode, terminalSender);
+                }
+                return false;
             }
         });
         txtOutput.addTextChangedListener(new TextWatcher() {

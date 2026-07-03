@@ -8,6 +8,13 @@ package com.bedro96.sshclient;
  */
 final class TerminalGeometry {
 
+    /**
+     * Number of rows held back from the physically-visible count so the terminal
+     * is a little shorter than the raw viewport. Requested by users who prefer a
+     * larger effective cell / bigger fonts and some breathing room at the bottom.
+     */
+    static final int ROW_RESERVE = 10;
+
     private TerminalGeometry() { }
 
     static int columns(int usableWidthPx, float cellWidthPx) {
@@ -21,6 +28,7 @@ final class TerminalGeometry {
         if (usableHeightPx <= 0 || cellHeightPx <= 0) {
             return 1;
         }
-        return Math.max(1, usableHeightPx / cellHeightPx);
+        int fit = usableHeightPx / cellHeightPx;
+        return Math.max(1, fit - ROW_RESERVE);
     }
 }

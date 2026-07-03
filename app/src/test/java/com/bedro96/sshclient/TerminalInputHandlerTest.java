@@ -17,6 +17,9 @@ public final class TerminalInputHandlerTest {
         testEmptyTextSendsNothing();
         testEnterSendsCarriageReturn();
         testNewlinesInPasteBecomeCarriageReturns();
+        testArrowKeysMapToAnsiCursorSequences();
+        testArrowKeyDownSendsSequenceAndUpIsConsumedSilently();
+        testNonArrowKeyIsNotHandledByArrowHandler();
         System.out.println("TERMINAL INPUT HANDLER TESTS PASSED");
     }
 
@@ -103,6 +106,42 @@ public final class TerminalInputHandlerTest {
         TerminalInputHandler.handleTypedText("a\nb", capture);
         assertArrayEquals(new byte[] {'a', 0x0d, 'b'}, capture.bytes,
                 "newlines inside typed/pasted text should each become CR");
+    }
+
+    private static void testArrowKeysMapToAnsiCursorSequences() {
+        assertArrayEquals(new byte[] {0x1b, '[', 'A'},
+                TerminalInputHandler.arrowKeySequence(TerminalInputHandler.KEYCODE_DPAD_UP),
+                "hardware Up should map to ESC [ A");
+        assertArrayEquals(new byte[] {0x1b, '[', 'B'},
+                TerminalInputHandler.arrowKeySequence(TerminalInputHandler.KEYCODE_DPAD_DOWN),
+                "hardware Down should map to ESC [ B");
+        assertArrayEquals(new byte[] {0x1b, '[', 'C'},
+                TerminalInputHandler.arrowKeySequence(TerminalInputHandler.KEYCODE_DPAD_RIGHT),
+                "hardware Right should map to ESC [ C");
+        assertArrayEquals(new byte[] {0x1b, '[', 'D'},
+                TerminalInputHandler.arrowKeySequence(TerminalInputHandler.KEYCODE_DPAD_LEFT),
+                "hardware Left should map to ESC [ D");
+    }
+
+    private static void testArrowKeyDownSendsSequenceAndUpIsConsumedSilently() {
+        Capture capture = new Capture();
+        assertTrue(TerminalInputHandler.handleArrowKeyAction(TerminalInputHandler.ACTION_DOWN,
+                TerminalInputHandler.KEYCODE_DPAD_UP, capture), "arrow key down should be consumed");
+        assertEquals(1, capture.sendCount, "arrow key down should send once");
+        assertArrayEquals(new byte[] {0x1b, '[', 'A'}, capture.bytes,
+                "arrow key down should send its cursor sequence");
+        assertTrue(TerminalInputHandler.handleArrowKeyAction(TerminalInputHandler.ACTION_UP,
+                TerminalInputHandler.KEYCODE_DPAD_UP, capture), "arrow key up should be consumed");
+        assertEquals(1, capture.sendCount, "arrow key up should not send additional bytes");
+    }
+
+    private static void testNonArrowKeyIsNotHandledByArrowHandler() {
+        Capture capture = new Capture();
+        assertFalse(TerminalInputHandler.handleArrowKeyAction(TerminalInputHandler.ACTION_DOWN,
+                999, capture), "a non-arrow key must not be consumed by the arrow handler");
+        assertEquals(0, capture.sendCount, "a non-arrow key must not send bytes");
+        assertTrue(TerminalInputHandler.arrowKeySequence(999) == null,
+                "a non-arrow key has no cursor sequence");
     }
 
     private static void assertTrue(boolean value, String message) {
