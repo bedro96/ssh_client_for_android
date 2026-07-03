@@ -17,6 +17,14 @@ final class TerminalInputHandler {
     static final int KEYCODE_DPAD_LEFT = 21;
     static final int KEYCODE_DPAD_RIGHT = 22;
 
+    // Mirror android.view.KeyEvent letter key codes (A=29 .. Z=54) so Ctrl+<letter>
+    // combos from a hardware/bluetooth keyboard can be mapped without an Android
+    // dependency. KEYCODE_J is called out because Ctrl+J (LF, 0x0a) is bound to
+    // actions in raw-mode TUIs such as the GitHub Copilot CLI.
+    static final int KEYCODE_A = 29;
+    static final int KEYCODE_Z = 54;
+    static final int KEYCODE_J = KEYCODE_A + ('J' - 'A');
+
     static final class KeyState {
         private boolean tabDownHandled;
     }
@@ -88,6 +96,41 @@ final class TerminalInputHandler {
      */
     static boolean handleArrowKeyAction(int action, int keyCode, Sender sender) {
         byte[] sequence = arrowKeySequence(keyCode);
+        if (sequence == null) {
+            return false;
+        }
+        if (action == ACTION_DOWN) {
+            sender.send(sequence);
+        }
+        return true;
+    }
+
+    /**
+     * Maps a hardware letter key code to its ASCII control byte (Ctrl+A=0x01 ..
+     * Ctrl+Z=0x1a), or {@code null} for any other key. Ctrl+J in particular must
+     * reach the remote as LF (0x0a): raw-mode TUIs (e.g. the GitHub Copilot CLI)
+     * bind actions to it, but a plain EditText silently swallows the combo
+     * instead of producing text.
+     */
+    static byte[] ctrlKeySequence(int keyCode) {
+        if (keyCode < KEYCODE_A || keyCode > KEYCODE_Z) {
+            return null;
+        }
+        return new byte[] {(byte) (keyCode - KEYCODE_A + 1)};
+    }
+
+    /**
+     * Handles a hardware Ctrl+<letter> combo. Sends its control byte on
+     * key-down and consumes the matching key-up. Returns {@code false} when
+     * Ctrl isn't held or the key isn't a letter, so other handlers/the default
+     * EditText behavior can process it.
+     */
+    static boolean handleCtrlKeyAction(int action, int keyCode, boolean ctrlPressed,
+                                        Sender sender) {
+        if (!ctrlPressed) {
+            return false;
+        }
+        byte[] sequence = ctrlKeySequence(keyCode);
         if (sequence == null) {
             return false;
         }

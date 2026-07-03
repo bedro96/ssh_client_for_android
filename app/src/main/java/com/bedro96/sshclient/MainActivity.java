@@ -503,6 +503,10 @@ public final class MainActivity extends Activity {
                     return TerminalInputHandler.handleArrowKeyAction(event.getAction(),
                             keyCode, terminalSender);
                 }
+                if (TerminalInputHandler.handleCtrlKeyAction(event.getAction(), keyCode,
+                        event.isCtrlPressed(), terminalSender)) {
+                    return true;
+                }
                 return false;
             }
         });

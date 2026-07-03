@@ -20,6 +20,10 @@ public final class TerminalInputHandlerTest {
         testArrowKeysMapToAnsiCursorSequences();
         testArrowKeyDownSendsSequenceAndUpIsConsumedSilently();
         testNonArrowKeyIsNotHandledByArrowHandler();
+        testCtrlJMapsToLineFeed();
+        testCtrlKeyDownSendsControlByteAndUpIsConsumedSilently();
+        testCtrlKeyActionIgnoredWhenCtrlNotPressed();
+        testNonLetterKeyIsNotHandledByCtrlHandler();
         System.out.println("TERMINAL INPUT HANDLER TESTS PASSED");
     }
 
@@ -142,6 +146,45 @@ public final class TerminalInputHandlerTest {
         assertEquals(0, capture.sendCount, "a non-arrow key must not send bytes");
         assertTrue(TerminalInputHandler.arrowKeySequence(999) == null,
                 "a non-arrow key has no cursor sequence");
+    }
+
+    private static void testCtrlJMapsToLineFeed() {
+        // Ctrl+J is the classic terminal control code for LF (0x0a); raw-mode
+        // TUIs (e.g. the GitHub Copilot CLI) bind actions to it, so a hardware
+        // keyboard's Ctrl+J must reach the remote as byte 0x0a.
+        assertArrayEquals(new byte[] {0x0a},
+                TerminalInputHandler.ctrlKeySequence(TerminalInputHandler.KEYCODE_J),
+                "Ctrl+J should map to LF (0x0a)");
+    }
+
+    private static void testCtrlKeyDownSendsControlByteAndUpIsConsumedSilently() {
+        Capture capture = new Capture();
+        assertTrue(TerminalInputHandler.handleCtrlKeyAction(TerminalInputHandler.ACTION_DOWN,
+                TerminalInputHandler.KEYCODE_J, true, capture),
+                "ctrl+j key down should be consumed");
+        assertEquals(1, capture.sendCount, "ctrl+j key down should send once");
+        assertArrayEquals(new byte[] {0x0a}, capture.bytes, "ctrl+j key down should send LF");
+        assertTrue(TerminalInputHandler.handleCtrlKeyAction(TerminalInputHandler.ACTION_UP,
+                TerminalInputHandler.KEYCODE_J, true, capture),
+                "ctrl+j key up should be consumed");
+        assertEquals(1, capture.sendCount, "ctrl+j key up should not send additional bytes");
+    }
+
+    private static void testCtrlKeyActionIgnoredWhenCtrlNotPressed() {
+        Capture capture = new Capture();
+        assertFalse(TerminalInputHandler.handleCtrlKeyAction(TerminalInputHandler.ACTION_DOWN,
+                TerminalInputHandler.KEYCODE_J, false, capture),
+                "j without ctrl held must not be handled as a control sequence");
+        assertEquals(0, capture.sendCount, "j without ctrl held must not send bytes");
+    }
+
+    private static void testNonLetterKeyIsNotHandledByCtrlHandler() {
+        Capture capture = new Capture();
+        assertFalse(TerminalInputHandler.handleCtrlKeyAction(TerminalInputHandler.ACTION_DOWN,
+                999, true, capture), "a non-letter key must not be handled by the ctrl handler");
+        assertEquals(0, capture.sendCount, "a non-letter key must not send bytes");
+        assertTrue(TerminalInputHandler.ctrlKeySequence(999) == null,
+                "a non-letter key has no ctrl sequence");
     }
 
     private static void assertTrue(boolean value, String message) {
