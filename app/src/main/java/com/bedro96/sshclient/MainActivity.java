@@ -685,8 +685,8 @@ public final class MainActivity extends Activity {
         if (usableWidth <= 0 || usableHeight <= 0 || charWidth <= 0f || lineHeight <= 0) {
             return;
         }
-        int cols = Math.max(1, (int) (usableWidth / charWidth));
-        int rows = Math.max(1, usableHeight / lineHeight);
+        int cols = TerminalGeometry.columns(usableWidth, charWidth);
+        int rows = TerminalGeometry.rows(usableHeight, lineHeight);
         if (cols == terminalCols && rows == terminalRows) {
             return;
         }

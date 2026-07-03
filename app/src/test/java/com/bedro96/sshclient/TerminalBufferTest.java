@@ -100,7 +100,7 @@ public final class TerminalBufferTest {
         TerminalBuffer.appendChunk(b, ESC + "[?1049h" + "copilot-ui", 200_000);
         assertEquals("copilot-ui", b.toString(), "alternate screen should start clean");
         TerminalBuffer.appendChunk(b, ESC + "[?1049l", 200_000);
-        assertEquals("shell output\nprompt$", b.toString(),
+        assertEquals("shell output\nprompt$ ", b.toString(),
                 "leaving alternate screen should restore primary content");
     }
 

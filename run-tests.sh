@@ -53,13 +53,15 @@ javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalScreen.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalAnsiProcessor.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalInputHandler.java" \
+  "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalGeometry.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/SshKeyAuth.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshKeyAuthTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/Utf8ChunkReaderTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalBufferTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalScreenTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalAnsiProcessorTest.java" \
-  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalInputHandlerTest.java"
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalInputHandlerTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalGeometryTest.java"
 
 echo "Running SshKeyAuthTest (multi-release disabled to simulate Android)..."
 java -Djdk.util.jar.enableMultiRelease=false \
@@ -88,3 +90,7 @@ java -Djdk.util.jar.enableMultiRelease=false \
 echo "Running TerminalInputHandlerTest..."
 java -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.TerminalInputHandlerTest
+
+echo "Running TerminalGeometryTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  com.bedro96.sshclient.TerminalGeometryTest

@@ -176,7 +176,7 @@ final class TerminalScreen {
                 text.append('\n');
             }
             int rowStart = text.length();
-            StoredRow rowData = active.snapshotRow(r);
+            StoredRow rowData = active.snapshotRow(r, r == row ? col : 0);
             appendRow(text, runs, rowData);
             if (r == row) {
                 cursorIndex = rowStart + Math.min(col, rowData.visibleLength);
@@ -645,7 +645,14 @@ final class TerminalScreen {
         }
 
         private StoredRow snapshotRow(int sourceRow) {
-            int visibleLength = visibleLength(sourceRow);
+            return snapshotRow(sourceRow, 0);
+        }
+
+        private StoredRow snapshotRow(int sourceRow, int minLength) {
+            int trimmed = visibleLength(sourceRow);
+            int visibleLength = trimmed > 0
+                    ? Math.max(trimmed, Math.max(0, Math.min(minLength, cols)))
+                    : trimmed;
             char[] rowChars = new char[visibleLength];
             byte[] rowFlags = new byte[visibleLength];
             int[] rowForegrounds = new int[visibleLength];

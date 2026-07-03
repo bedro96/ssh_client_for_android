@@ -22,6 +22,7 @@ public final class TerminalScreenTest {
         testLongCatScrollbackPreservesEarlyAndLateLines();
         testCursorVisibilityModes();
         testTruecolorStyleOverwrite();
+        testCursorSitsPastTrailingSpaces();
         System.out.println("TERMINAL SCREEN TESTS PASSED");
     }
 
@@ -65,7 +66,7 @@ public final class TerminalScreenTest {
         TerminalScreen screen = new TerminalScreen(4, 16);
         screen.append("line one\r\nline two\r\nline three");
         screen.append(ESC + "[2;6H" + ESC + "[0J");
-        assertEquals("line one\nline", screen.snapshot(200_000).text,
+        assertEquals("line one\nline ", screen.snapshot(200_000).text,
                 "ESC[0J should clear from the cursor to the display end");
 
         screen.append("restored");
@@ -86,7 +87,7 @@ public final class TerminalScreenTest {
         assertEquals("copilot-ui", screen.snapshot(200_000).text,
                 "alternate screen should start with a clean buffer");
         screen.append(ESC + "[?1049l");
-        assertEquals("shell output\nprompt$", screen.snapshot(200_000).text,
+        assertEquals("shell output\nprompt$ ", screen.snapshot(200_000).text,
                 "leaving alternate screen should restore the primary buffer");
     }
 
@@ -131,7 +132,7 @@ public final class TerminalScreenTest {
         assertNotContains(tmux, "[tmux 1]", "tmux redraw should not leave stale status bars behind");
 
         screen.append(ESC + "[?1049l");
-        assertEquals("shell output\nprompt$", screen.snapshot(200_000).text,
+        assertEquals("shell output\nprompt$ ", screen.snapshot(200_000).text,
                 "quitting tmux should restore the primary shell screen");
     }
 
@@ -220,6 +221,16 @@ public final class TerminalScreenTest {
                 "overwritten cell should retain truecolor foreground");
         assertEquals(Integer.valueOf(0x010203), run.backgroundRgb,
                 "overwritten cell should retain truecolor background");
+    }
+
+    private static void testCursorSitsPastTrailingSpaces() {
+        TerminalScreen screen = new TerminalScreen(2, 16);
+        screen.append("abc     ");
+        TerminalScreen.Snapshot snap = screen.snapshot(200_000);
+        assertEquals("abc     ", snap.text,
+                "cursor row should keep spaces up to the cursor column");
+        assertEquals(8, snap.cursorIndex,
+                "cursor should sit past trailing spaces at its true column");
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
