@@ -294,6 +294,7 @@ public final class TerminalAnsiProcessor {
         if (escapeState == ESCAPE_STATE_CHARSET) {
             // Consume the single designator byte of ESC ( / ) / * / + and return to text.
             escapeState = ESCAPE_STATE_TEXT;
+            return;
         }
     }
 
