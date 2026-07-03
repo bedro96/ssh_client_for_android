@@ -22,6 +22,12 @@ public final class TerminalAnsiProcessorTest {
         testLineEditCsiIsStillReEmittedAsText();
         testSplitLineEditCsiIsReassembledAsText();
         testNonCsiEscapesAreReEmittedAsText();
+        testSs3FinalByteIsConsumedSilently();
+        testSplitSs3AcrossChunksIsConsumed();
+        testSs2FinalByteIsConsumedSilently();
+        testCharsetDesignationIsConsumedSilently();
+        testSplitCharsetAcrossChunksIsConsumed();
+        testUnrecognizedTwoCharEscapeIsConsumedSilently();
         testDcsPmApcSosStringsAreDiscarded();
         test8BitDcsPmApcSosStringsAreDiscarded();
         testSplit8BitOscAcrossChunksIsDiscarded();
@@ -195,6 +201,65 @@ public final class TerminalAnsiProcessorTest {
         processor.process("A\u001b7B\u001b8C\u001bDD\u001bME", new Capture(segments));
         assertEquals("A\u001b7B\u001b8C\u001bDD\u001bME", joinText(segments),
                 "non-CSI escapes should be re-emitted so terminal cursor ops survive parsing");
+    }
+
+    private static void testSs3FinalByteIsConsumedSilently() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        // ESC O B = SS3 cursor-down: the 'B' is the SS3 final and must NOT appear as text
+        processor.process("before\u001bOBafter", new Capture(segments));
+        assertEquals("beforeafter", joinText(segments),
+                "ESC O B (SS3 cursor-down) must be fully consumed; 'B' must not leak");
+    }
+
+    private static void testSplitSs3AcrossChunksIsConsumed() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+        // Chunk boundary falls between ESC O and the final byte
+        processor.process("x\u001bO", capture);
+        processor.process("By", capture);
+        assertEquals("xy", joinText(segments),
+                "SS3 split across chunks must still consume the final byte without leaking");
+    }
+
+    private static void testSs2FinalByteIsConsumedSilently() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        // ESC N = SS2, similarly consumes one final byte
+        processor.process("a\u001bNBb", new Capture(segments));
+        assertEquals("ab", joinText(segments),
+                "ESC N <final> (SS2) must be fully consumed without leaking the final byte");
+    }
+
+    private static void testCharsetDesignationIsConsumedSilently() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        // ESC ( B = designate ASCII as G0 (emitted constantly by tmux/bash)
+        processor.process("p\u001b(Bq\u001b)0r\u001b*As\u001b+Bt", new Capture(segments));
+        assertEquals("pqrst", joinText(segments),
+                "ESC ( B / ESC ) 0 / ESC * A / ESC + B charset sequences must be fully consumed");
+    }
+
+    private static void testSplitCharsetAcrossChunksIsConsumed() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+        // Chunk boundary falls between ESC ( and the designator byte B
+        processor.process("m\u001b(", capture);
+        processor.process("Bn", capture);
+        assertEquals("mn", joinText(segments),
+                "charset designation split across chunks must consume designator without leaking");
+    }
+
+    private static void testUnrecognizedTwoCharEscapeIsConsumedSilently() {
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        // ESC = (keypad app mode), ESC > (keypad numeric mode), ESC c (full reset)
+        // ESC E (NEL), none of which should emit visible text or raw ESC bytes
+        processor.process("a\u001b=b\u001b>c\u001bcde\u001bEf", new Capture(segments));
+        assertEquals("abcdef", joinText(segments),
+                "unrecognized two-char escapes must be consumed silently without leaking");
     }
 
     private static void testDcsPmApcSosStringsAreDiscarded() {

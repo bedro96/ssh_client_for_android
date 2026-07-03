@@ -22,6 +22,8 @@ public final class TerminalAnsiProcessor {
     private static final int ESCAPE_STATE_OSC_MAYBE_ST = 4;
     private static final int ESCAPE_STATE_STRING = 5;
     private static final int ESCAPE_STATE_STRING_MAYBE_ST = 6;
+    private static final int ESCAPE_STATE_SS3 = 7;
+    private static final int ESCAPE_STATE_CHARSET = 8;
 
     private static final int[] BASE_16_RGB = new int[] {
             0x000000, 0xcd0000, 0x00cd00, 0xcdcd00,
@@ -210,7 +212,25 @@ public final class TerminalAnsiProcessor {
                 escapeState = ESCAPE_STATE_STRING;
                 return;
             }
-            pendingText.append((char) 0x1b).append(ch);
+            if (ch == 'O' || ch == 'N') {
+                // SS3 (ESC O) and SS2 (ESC N): consume one final byte, then return to text.
+                // e.g. ESC O B = cursor-down key; without this the 'B' leaks as visible text.
+                escapeState = ESCAPE_STATE_SS3;
+                return;
+            }
+            if (ch == '(' || ch == ')' || ch == '*' || ch == '+') {
+                // Charset designation (ESC ( B = G0←ASCII, ESC ) 0 = G1←special, etc.).
+                // Consume one designator byte so it does not appear as visible text.
+                escapeState = ESCAPE_STATE_CHARSET;
+                return;
+            }
+            // Two-char escapes that TerminalScreen needs to interpret (cursor save/restore,
+            // index, reverse-index).  Re-emit them so they survive the parser boundary.
+            if (ch == '7' || ch == '8' || ch == 'D' || ch == 'M') {
+                pendingText.append((char) 0x1b).append(ch);
+            }
+            // All other two-char escapes (keypad =/>  , NEL E, full-reset c, etc.) are
+            // silently consumed: no byte leaks as visible text.
             escapeState = ESCAPE_STATE_TEXT;
             return;
         }
@@ -265,6 +285,16 @@ public final class TerminalAnsiProcessor {
             } else if (ch != 0x1b) {
                 escapeState = ESCAPE_STATE_STRING;
             }
+        }
+        if (escapeState == ESCAPE_STATE_SS3) {
+            // Consume the single final byte of an SS2/SS3 sequence and return to text.
+            escapeState = ESCAPE_STATE_TEXT;
+            return;
+        }
+        if (escapeState == ESCAPE_STATE_CHARSET) {
+            // Consume the single designator byte of ESC ( / ) / * / + and return to text.
+            escapeState = ESCAPE_STATE_TEXT;
+            return;
         }
     }
 
