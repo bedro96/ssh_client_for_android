@@ -141,6 +141,7 @@ public final class MainActivity extends Activity {
         wireKeyToolbar();
         wireTerminalInput();
         wireTerminalViewport();
+        applyTerminalTypeface();
         setTerminalSize(terminalSize);
         txtOutput.setCursorVisible(false);
     }
@@ -613,6 +614,28 @@ public final class MainActivity extends Activity {
         findViewById(id).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { sendRaw(seq); }
         });
+    }
+
+    private void applyTerminalTypeface() {
+        // Android's built-in "monospace" family lacks box-drawing/line glyphs
+        // (U+2500-U+257F etc.), so those characters fall back to a proportional
+        // font that is wider than the ASCII cell. That breaks the fixed grid the
+        // terminal relies on: full-width rows overflow and soft-wrap into "a line
+        // and a half", and box borders no longer align with their contents.
+        // DejaVu Sans Mono renders every glyph (ASCII and box-drawing alike) at a
+        // single uniform advance, restoring a true monospace grid.
+        try {
+            Typeface mono = Typeface.createFromAsset(getAssets(), "fonts/DejaVuSansMono.ttf");
+            if (mono != null) {
+                txtOutput.setTypeface(mono);
+            }
+        } catch (RuntimeException ignored) {
+            // Fall back to the platform monospace family if the asset is missing.
+        }
+        // A terminal grid is authoritative for line breaks: every screen row is
+        // already emitted as its own line, so the view must never soft-wrap a row
+        // onto a second display line.
+        txtOutput.setHorizontallyScrolling(true);
     }
 
     private void setTerminalSize(float sp) {

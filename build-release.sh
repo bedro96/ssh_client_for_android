@@ -128,6 +128,7 @@ DEP_CLASSPATH="${JSCH_JAR}:${BCPROV_JAR}"
   --min-sdk-version "${MIN_SDK}" \
   --target-sdk-version "${TARGET_SDK}" \
   --auto-add-overlay \
+  -A "${ROOT_DIR}/app/src/main/assets" \
   -o "${BUILD_DIR}/base.apk" \
   "${BUILD_DIR}/resources.zip"
 
