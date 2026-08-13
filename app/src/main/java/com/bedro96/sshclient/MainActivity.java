@@ -1,12 +1,17 @@
 package com.bedro96.sshclient;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.SpannableStringBuilder;
@@ -27,38 +32,32 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.jcraft.jsch.ChannelShell;
-import com.jcraft.jsch.Identity;
-import com.jcraft.jsch.JSch;
-import com.jcraft.jsch.JSchException;
-import com.jcraft.jsch.Session;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Properties;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Interactive SSH client with saved host profiles, identity-file key auth, a
  * special-key toolbar and a single terminal area (typed keystrokes are streamed
  * straight to the remote shell, which echoes them back).
+ *
+ * The connection itself, the reader thread and the terminal buffer live in
+ * {@link SshConnectionService}, a bound foreground service: this Activity is
+ * only a thin, replaceable UI over it, so switching away from the app (or even
+ * this Activity being recreated) never touches the live session.
  */
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements SshConnectionService.Listener {
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final int MAX_OUTPUT_CHARS = 200_000;
     private static final int REQ_IMPORT_KEY = 1001;
+    private static final int REQ_POST_NOTIFICATIONS = 1002;
     private static final String PREFS = "profiles";
     private static final String KEY_PROFILES = "list";
     private static final String KEY_DIR = "identity_keys";
@@ -80,12 +79,9 @@ public final class MainActivity extends Activity {
     private View keyToolbar;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
 
-    private volatile Session session;
-    private volatile ChannelShell channel;
-    private volatile OutputStream remoteIn;
-    private volatile Thread readerThread;
+    private SshConnectionService sshService;
+    private boolean boundToService;
 
     private final List<JSONObject> profiles = new ArrayList<>();
     private ArrayAdapter<String> profileAdapter;
@@ -96,10 +92,20 @@ public final class MainActivity extends Activity {
     private boolean suppressTextWatcher;
     /** Tracks whether the current hardware Tab keypress was consumed by the terminal. */
     private final TerminalInputHandler.KeyState terminalKeyState = new TerminalInputHandler.KeyState();
-    private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
-    private final TerminalScreen terminalScreen = new TerminalScreen();
     private int terminalRows = TerminalScreen.DEFAULT_ROWS;
     private int terminalCols = TerminalScreen.DEFAULT_COLS;
+
+    private final ServiceConnection serviceConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+            sshService = ((SshConnectionService.LocalBinder) binder).getService();
+            sshService.setListener(MainActivity.this);
+            onServiceBound();
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name) {
+            sshService = null;
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -144,18 +150,50 @@ public final class MainActivity extends Activity {
         applyTerminalTypeface();
         setTerminalSize(terminalSize);
         txtOutput.setCursorVisible(false);
+        requestNotificationPermissionIfNeeded();
+
+        bindService(new Intent(this, SshConnectionService.class), serviceConnection, Context.BIND_AUTO_CREATE);
+        boundToService = true;
     }
 
     @Override
     protected void onDestroy() {
-        disconnect();
-        io.shutdownNow();
+        if (boundToService) {
+            if (sshService != null) { sshService.setListener(null); }
+            unbindService(serviceConnection);
+            boundToService = false;
+        }
         super.onDestroy();
     }
 
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[] {"android.permission.POST_NOTIFICATIONS"}, REQ_POST_NOTIFICATIONS);
+            }
+        }
+    }
+
+    /** Called once the binding to the always-alive connection service is ready. */
+    private void onServiceBound() {
+        if (sshService.isConnected()) {
+            setStatus(sshService.getStatusText());
+            btnConnect.setEnabled(true);
+            btnConnect.setText(R.string.action_disconnect);
+            setConnectionPanelCollapsed(true);
+            keyToolbar.setVisibility(View.VISIBLE);
+            txtOutput.setEnabled(true);
+            updateTerminalGeometry();
+            renderTermBuffer();
+        } else {
+            String status = sshService.getStatusText();
+            if (!TextUtils.isEmpty(status)) { setStatus(status); }
+        }
+    }
+
     private boolean isConnected() {
-        Session s = session;
-        return s != null && s.isConnected();
+        return sshService != null && sshService.isConnected();
     }
 
     // ---------------------------------------------------------------- Profiles
@@ -338,136 +376,38 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "Invalid port", Toast.LENGTH_SHORT).show();
             return;
         }
+        if (sshService == null) {
+            Toast.makeText(this, "Connection service not ready yet, try again", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         setStatus(getString(R.string.status_connecting) + " " + user + "@" + host + ":" + port);
         setConnectionInputsEnabled(false);
         btnConnect.setEnabled(false);
-
-        io.submit(new Runnable() {
-            @Override public void run() {
-                try {
-                    // Ed25519 identity keys (id_ed25519) only work on Android via
-                    // the Bouncy Castle EdDSA classes; the JDK15+ implementation
-                    // jsch prefers is stripped out by Android's dex packaging.
-                    SshKeyAuth.configureEdDSAForAndroid();
-                    JSch jsch = new JSch();
-                    if (!TextUtils.isEmpty(idFile)) {
-                        // The entered password doubles as the key passphrase so that
-                        // passphrase-protected private keys can be decrypted. JSch
-                        // ignores the passphrase for keys that are not encrypted.
-                        Identity identity = JschEd25519Support.addIdentity(jsch, idFile, password);
-                        if (JschEd25519Support.isEncrypted(identity)) {
-                            if (TextUtils.isEmpty(password)) {
-                                throw new JSchException("Identity key is passphrase-protected. Enter the passphrase in the password field.");
-                            }
-                            throw new JSchException("Unable to decrypt the identity key. Check the passphrase in the password field.");
-                        }
-                    }
-                    Session s = jsch.getSession(user, host, port);
-                    if (!TextUtils.isEmpty(password)) { s.setPassword(password); }
-                    Properties config = new Properties();
-                    config.put("StrictHostKeyChecking", "no");
-                    // Try the imported key first, then fall back to password-based
-                    // methods so a publickey failure does not abort the login.
-                    config.put("PreferredAuthentications",
-                            "publickey,keyboard-interactive,password");
-                    s.setConfig(config);
-                    s.setServerAliveInterval(30_000);
-                    s.connect(15_000);
-
-                    ChannelShell ch = (ChannelShell) s.openChannel("shell");
-                    ch.setPtyType("xterm-256color", terminalCols, terminalRows, 0, 0);
-                    final InputStream in = ch.getInputStream();
-                    final OutputStream out = ch.getOutputStream();
-                    ch.connect(10_000);
-
-                    session = s;
-                    channel = ch;
-                    remoteIn = out;
-                    startReader(in);
-
-                    ui.post(new Runnable() {
-                        @Override public void run() {
-                            clearOutput();
-                            setStatus(getString(R.string.status_connected) + " " + user + "@" + host + ":" + port);
-                            btnConnect.setEnabled(true);
-                            btnConnect.setText(R.string.action_disconnect);
-                            setConnectionPanelCollapsed(true);
-                            keyToolbar.setVisibility(View.VISIBLE);
-                            txtOutput.setEnabled(true);
-                            txtOutput.requestFocus();
-                            updateTerminalGeometry();
-                            reportCurrentPtySize();
-                        }
-                    });
-                } catch (final Exception e) {
-                    final String detail = describeConnectError(e, idFile);
-                    ui.post(new Runnable() {
-                        @Override public void run() {
-                            setStatus(getString(R.string.status_error) + ": " + detail);
-                            appendOutput("\n[connection failed] " + detail + "\n");
-                            setConnectionInputsEnabled(true);
-                            btnConnect.setEnabled(true);
-                            btnConnect.setText(R.string.action_connect);
-                        }
-                    });
-                    cleanupSilently();
-                }
-            }
-        });
+        sshService.connect(host, port, user, password, idFile, terminalCols, terminalRows);
     }
 
-    private String describeConnectError(Exception e, String idFile) {
-        String msg = e.getMessage();
-        if (msg == null) { msg = e.toString(); }
-        String lowerCaseMsg = msg.toLowerCase();
-        if (lowerCaseMsg.contains("passphrase") || lowerCaseMsg.contains("decrypt the identity key")) {
-            return msg;
-        }
-        if (lowerCaseMsg.contains("auth fail") || lowerCaseMsg.contains("auth cancel")) {
-            if (!TextUtils.isEmpty(idFile)) {
-                return msg + " — the server rejected the identity key. Confirm the"
-                        + " matching public key is in the server's ~/.ssh/authorized_keys."
-                        + " Leave the password field empty for a key with no passphrase;"
-                        + " only enter the passphrase there if the key is encrypted.";
-            }
-            return msg + " — check the username and password.";
-        }
-        return msg;
+    @Override public void onConnected(String host, int port, String user) {
+        clearOutput();
+        setStatus(getString(R.string.status_connected) + " " + user + "@" + host + ":" + port);
+        btnConnect.setEnabled(true);
+        btnConnect.setText(R.string.action_disconnect);
+        setConnectionPanelCollapsed(true);
+        keyToolbar.setVisibility(View.VISIBLE);
+        txtOutput.setEnabled(true);
+        txtOutput.requestFocus();
+        updateTerminalGeometry();
     }
 
-    private void startReader(final InputStream in) {
-        Thread t = new Thread(new Runnable() {
-            @Override public void run() {
-                byte[] buf = new byte[4096];
-                try {
-                    while (!Thread.currentThread().isInterrupted()) {
-                        int n = in.read(buf);
-                        if (n < 0) { break; }
-                        if (n == 0) { continue; }
-                        final byte[] chunk = Arrays.copyOf(buf, n);
-                        ui.post(new Runnable() {
-                            @Override public void run() { appendOutput(chunk); }
-                        });
-                    }
-                } catch (IOException ignored) {
-                } finally {
-                    ui.post(new Runnable() {
-                        @Override public void run() {
-                            if (isConnected()) { setStatus("Remote shell closed"); }
-                        }
-                    });
-                }
-            }
-        }, "ssh-reader");
-        t.setDaemon(true);
-        readerThread = t;
-        t.start();
+    @Override public void onConnectFailed(String detail) {
+        setStatus(getString(R.string.status_error) + ": " + detail);
+        appendOutput("\n[connection failed] " + detail + "\n");
+        setConnectionInputsEnabled(true);
+        btnConnect.setEnabled(true);
+        btnConnect.setText(R.string.action_connect);
     }
 
-    private void disconnect() {
-        setStatus(getString(R.string.status_disconnected));
-        cleanupSilently();
+    @Override public void onDisconnected() {
         setConnectionInputsEnabled(true);
         btnConnect.setText(R.string.action_connect);
         btnConnect.setEnabled(true);
@@ -477,15 +417,29 @@ public final class MainActivity extends Activity {
         txtOutput.setCursorVisible(false);
     }
 
-    private void cleanupSilently() {
-        Thread r = readerThread;
-        if (r != null) { r.interrupt(); readerThread = null; }
-        ChannelShell ch = channel;
-        if (ch != null) { try { ch.disconnect(); } catch (Exception ignored) { } channel = null; }
-        Session s = session;
-        if (s != null) { try { s.disconnect(); } catch (Exception ignored) { } session = null; }
-        remoteIn = null;
+    @Override public void onRemoteShellClosed() {
+        setStatus("Remote shell closed");
     }
+
+    @Override public void onScreenUpdated() {
+        renderTermBuffer();
+        scrollOutput.post(new Runnable() {
+            @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
+        });
+    }
+
+    @Override public void onSendFailed(String detail) {
+        appendOutput("\n[send failed] " + detail + "\n");
+    }
+
+    @Override public void onStatusChanged(final String status) {
+        setStatus(status);
+    }
+
+    private void disconnect() {
+        if (sshService != null) { sshService.disconnect(); }
+    }
+
 
     // --------------------------------------------------------- Terminal input
 
@@ -557,7 +511,8 @@ public final class MainActivity extends Activity {
      * interactive CLIs that redraw a line in place show a cursor in the right spot.
      */
     private void renderTermBuffer() {
-        TerminalScreen.Snapshot snapshot = terminalScreen.snapshot(MAX_OUTPUT_CHARS);
+        if (sshService == null) { return; }
+        TerminalScreen.Snapshot snapshot = sshService.snapshot(MAX_OUTPUT_CHARS);
         SpannableStringBuilder rendered = new SpannableStringBuilder(snapshot.text);
         for (TerminalScreen.StyleRun run : snapshot.runs) {
             if (run.end <= run.start) { continue; }
@@ -582,21 +537,7 @@ public final class MainActivity extends Activity {
     }
 
     private void sendRaw(final byte[] bytes) {
-        if (remoteIn == null) { return; }
-        io.submit(new Runnable() {
-            @Override public void run() {
-                try {
-                    OutputStream o = remoteIn;
-                    if (o == null) { return; }
-                    o.write(bytes);
-                    o.flush();
-                } catch (final IOException e) {
-                    ui.post(new Runnable() {
-                        @Override public void run() { appendOutput("\n[send failed] " + e.getMessage() + "\n"); }
-                    });
-                }
-            }
-        });
+        if (sshService != null) { sshService.sendRaw(bytes); }
     }
 
     private void wireKeyToolbar() {
@@ -676,33 +617,15 @@ public final class MainActivity extends Activity {
     private void setStatus(CharSequence s) { txtStatus.setText(s); }
 
     private void appendOutput(CharSequence chunk) {
-        if (chunk == null || chunk.length() == 0) { return; }
-        ansiProcessor.process(chunk, new TerminalAnsiProcessor.SegmentConsumer() {
-            @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-                terminalScreen.append(text, bold, foregroundRgb, backgroundRgb);
-            }
-        });
+        if (chunk == null || chunk.length() == 0 || sshService == null) { return; }
+        sshService.appendLocalMessage(chunk.toString());
         renderTermBuffer();
         scrollOutput.post(new Runnable() {
             @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
         });
     }
 
-    private void appendOutput(byte[] chunk) {
-        if (chunk == null || chunk.length == 0) { return; }
-        ansiProcessor.process(chunk, 0, chunk.length, new TerminalAnsiProcessor.SegmentConsumer() {
-            @Override public void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
-                terminalScreen.append(text, bold, foregroundRgb, backgroundRgb);
-            }
-        });
-        renderTermBuffer();
-        scrollOutput.post(new Runnable() {
-            @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
-        });
-    }
     private void clearOutput() {
-        terminalScreen.reset();
-        ansiProcessor.reset();
         suppressTextWatcher = true;
         txtOutput.setCursorVisible(false);
         txtOutput.setText("");
@@ -725,20 +648,7 @@ public final class MainActivity extends Activity {
         }
         terminalCols = cols;
         terminalRows = rows;
-        terminalScreen.resize(rows, cols);
+        if (sshService != null) { sshService.resizeTerminal(cols, rows); }
         renderTermBuffer();
-        reportCurrentPtySize();
-    }
-
-    private void reportCurrentPtySize() {
-        final ChannelShell ch = channel;
-        if (ch == null || !ch.isConnected()) {
-            return;
-        }
-        final int cols = terminalCols;
-        final int rows = terminalRows;
-        io.submit(new Runnable() {
-            @Override public void run() { ch.setPtySize(cols, rows, 0, 0); }
-        });
     }
 }

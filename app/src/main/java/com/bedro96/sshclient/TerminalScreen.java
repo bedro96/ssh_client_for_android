@@ -71,16 +71,23 @@ final class TerminalScreen {
         if (rows == active.rows && cols == active.cols) {
             return;
         }
+        // Screen.resized() top-aligns on growth (existing rows keep their index,
+        // new rows appear below) and bottom-aligns on shrink (rows that no longer
+        // fit are dropped off the top). Row-tracking state below must shift by the
+        // same amount the shrink path drops, or the cursor and saved positions end
+        // up pointing at content that moved: writes then land on the wrong line
+        // while the real last line is left stale on screen.
+        int rowOffset = Math.max(0, active.rows - rows);
         primary = primary.resized(rows, cols);
         alternate = alternate.resized(rows, cols);
         active = useAlternate ? alternate : primary;
         scrollTop = 0;
         scrollBottom = rows - 1;
-        row = clamp(row, 0, rows - 1);
+        row = clamp(row - rowOffset, 0, rows - 1);
         col = clamp(col, 0, cols - 1);
-        savedRow = clamp(savedRow, 0, rows - 1);
+        savedRow = clamp(savedRow - rowOffset, 0, rows - 1);
         savedCol = clamp(savedCol, 0, cols - 1);
-        primaryRowBeforeAlt = clamp(primaryRowBeforeAlt, 0, rows - 1);
+        primaryRowBeforeAlt = clamp(primaryRowBeforeAlt - rowOffset, 0, rows - 1);
         primaryColBeforeAlt = clamp(primaryColBeforeAlt, 0, cols - 1);
         wrapPending = false;
     }
@@ -594,8 +601,13 @@ final class TerminalScreen {
             Screen resized = new Screen(newRows, newCols);
             int rowsToCopy = Math.min(rows, newRows);
             int colsToCopy = Math.min(cols, newCols);
-            int sourceRowStart = rows - rowsToCopy;
-            int targetRowStart = newRows - rowsToCopy;
+            // Growing: keep every existing row at its current index and add the
+            // new rows below (top-aligned). Shrinking: keep the bottom rows —
+            // the ones actually visible on screen — and drop the rest off the
+            // top (bottom-aligned), matching how a real terminal keeps the
+            // active viewport when it loses rows.
+            int sourceRowStart = newRows >= rows ? 0 : rows - rowsToCopy;
+            int targetRowStart = newRows >= rows ? 0 : newRows - rowsToCopy;
             for (int r = 0; r < rowsToCopy; r++) {
                 int sourceRow = sourceRowStart + r;
                 int targetRow = targetRowStart + r;

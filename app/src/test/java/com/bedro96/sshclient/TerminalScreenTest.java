@@ -24,6 +24,8 @@ public final class TerminalScreenTest {
         testCursorVisibilityModes();
         testTruecolorStyleOverwrite();
         testCursorSitsPastTrailingSpaces();
+        testGrowingRowsKeepsContentAndCursorAnchoredAtTop();
+        testShrinkingRowsKeepsCursorOnItsLine();
         System.out.println("TERMINAL SCREEN TESTS PASSED");
     }
 
@@ -255,6 +257,35 @@ public final class TerminalScreenTest {
                 "cursor row should keep spaces up to the cursor column");
         assertEquals(8, snap.cursorIndex,
                 "cursor should sit past trailing spaces at its true column");
+    }
+
+    // Growing the terminal (e.g. rotating the device, or the keyboard closing and
+    // freeing up rows) must never shift already-painted rows or leave the cursor
+    // pointing at stale content: that is what produces "ghost" text where a
+    // redraw appears to land on the wrong line while an old line lingers on
+    // screen, untouched, below it.
+    private static void testGrowingRowsKeepsContentAndCursorAnchoredAtTop() {
+        TerminalScreen screen = new TerminalScreen(3, 10);
+        screen.append("line0\nline1\nline2");
+        screen.resize(5, 10);
+        screen.append("\nNEWLINE");
+        assertEquals("line0\nline1\nline2\nNEWLINE", screen.snapshot(200_000).text,
+                "growing rows should keep existing lines anchored at the top and"
+                        + " continue writing after the last line, not overwrite it");
+    }
+
+    // Shrinking must shift the cursor by the same number of rows that get
+    // dropped off the top, so it keeps tracking the (now higher-indexed) line it
+    // was on and subsequent output continues in the right place instead of
+    // clobbering a line that moved.
+    private static void testShrinkingRowsKeepsCursorOnItsLine() {
+        TerminalScreen screen = new TerminalScreen(5, 10);
+        screen.append("line0\nline1\nline2\nline3\nline4");
+        screen.resize(3, 10);
+        screen.append("\nNEWLINE");
+        assertEquals("line2\nline3\nline4\nNEWLINE", screen.snapshot(200_000).text,
+                "shrinking rows should keep the cursor tracking its line and"
+                        + " scroll older content off rather than overwriting a stale row");
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
