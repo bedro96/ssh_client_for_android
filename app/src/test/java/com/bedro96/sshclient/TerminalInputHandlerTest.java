@@ -20,6 +20,8 @@ public final class TerminalInputHandlerTest {
         testArrowKeysMapToAnsiCursorSequences();
         testArrowKeyDownSendsSequenceAndUpIsConsumedSilently();
         testNonArrowKeyIsNotHandledByArrowHandler();
+        testEscapeKeyDownSendsEscAndUpIsConsumedSilently();
+        testNonEscapeKeyIsNotHandledByEscapeHandler();
         testCtrlJMapsToLineFeed();
         testCtrlKeyDownSendsControlByteAndUpIsConsumedSilently();
         testCtrlKeyActionIgnoredWhenCtrlNotPressed();
@@ -146,6 +148,27 @@ public final class TerminalInputHandlerTest {
         assertEquals(0, capture.sendCount, "a non-arrow key must not send bytes");
         assertTrue(TerminalInputHandler.arrowKeySequence(999) == null,
                 "a non-arrow key has no cursor sequence");
+    }
+
+    private static void testEscapeKeyDownSendsEscAndUpIsConsumedSilently() {
+        Capture capture = new Capture();
+        assertTrue(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_DOWN,
+                TerminalInputHandler.KEYCODE_ESCAPE, capture),
+                "escape key down should be consumed");
+        assertEquals(1, capture.sendCount, "escape key down should send once");
+        assertArrayEquals(new byte[] {0x1b}, capture.bytes,
+                "escape key down should send ESC 0x1b");
+        assertTrue(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_UP,
+                TerminalInputHandler.KEYCODE_ESCAPE, capture),
+                "escape key up should be consumed");
+        assertEquals(1, capture.sendCount, "escape key up should not send additional bytes");
+    }
+
+    private static void testNonEscapeKeyIsNotHandledByEscapeHandler() {
+        Capture capture = new Capture();
+        assertFalse(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_DOWN,
+                999, capture), "non-escape key must not be consumed by escape handler");
+        assertEquals(0, capture.sendCount, "non-escape key must not send bytes");
     }
 
     private static void testCtrlJMapsToLineFeed() {

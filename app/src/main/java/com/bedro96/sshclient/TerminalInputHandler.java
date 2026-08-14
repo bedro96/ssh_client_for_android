@@ -16,6 +16,7 @@ final class TerminalInputHandler {
     static final int KEYCODE_DPAD_DOWN = 20;
     static final int KEYCODE_DPAD_LEFT = 21;
     static final int KEYCODE_DPAD_RIGHT = 22;
+    static final int KEYCODE_ESCAPE = 111;
 
     // Mirror android.view.KeyEvent letter key codes (A=29 .. Z=54) so Ctrl+<letter>
     // combos from a hardware/bluetooth keyboard can be mapped without an Android
@@ -35,6 +36,7 @@ final class TerminalInputHandler {
     private static final byte[] CURSOR_DOWN = new byte[] {0x1b, '[', 'B'};
     private static final byte[] CURSOR_RIGHT = new byte[] {0x1b, '[', 'C'};
     private static final byte[] CURSOR_LEFT = new byte[] {0x1b, '[', 'D'};
+    private static final byte[] ESCAPE = new byte[] {0x1b};
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private TerminalInputHandler() { }
@@ -101,6 +103,20 @@ final class TerminalInputHandler {
         }
         if (action == ACTION_DOWN) {
             sender.send(sequence);
+        }
+        return true;
+    }
+
+    /**
+     * Handles a hardware Escape key. Sends the single ESC byte (0x1b) on key-down
+     * and consumes the matching key-up so the key is always forwarded remotely.
+     */
+    static boolean handleEscapeKeyAction(int action, int keyCode, Sender sender) {
+        if (keyCode != KEYCODE_ESCAPE) {
+            return false;
+        }
+        if (action == ACTION_DOWN) {
+            sender.send(ESCAPE);
         }
         return true;
     }
