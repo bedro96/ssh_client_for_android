@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.ApplicationInfo;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.net.Uri;
@@ -21,6 +22,7 @@ import android.text.TextWatcher;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.AdapterView;
@@ -61,6 +63,9 @@ public final class MainActivity extends Activity implements SshConnectionService
     private static final String PREFS = "profiles";
     private static final String KEY_PROFILES = "list";
     private static final String KEY_DIR = "identity_keys";
+    private static final String CI_SMOKE_TEST_EXTRA = "ci_smoke_test";
+    private static final String CI_SMOKE_ESC_LOG_MARKER = "CI_SMOKE_ESC_FORWARDED:1b";
+    private static final String TAG = "MainActivity";
 
     private EditText editHost;
     private EditText editPort;
@@ -87,6 +92,7 @@ public final class MainActivity extends Activity implements SshConnectionService
     private ArrayAdapter<String> profileAdapter;
     private String identityPath;
     private float terminalSize = 13f;
+    private boolean ciSmokeTestMode;
 
     /** True while we programmatically reset the terminal text, to suppress echo. */
     private boolean suppressTextWatcher;
@@ -127,6 +133,8 @@ public final class MainActivity extends Activity implements SshConnectionService
         scrollOutput = findViewById(R.id.scrollOutput);
         panelConnection = findViewById(R.id.panelConnection);
         keyToolbar = findViewById(R.id.keyToolbar);
+        ciSmokeTestMode = isDebuggableBuild()
+                && "1".equals(getIntent().getStringExtra(CI_SMOKE_TEST_EXTRA));
 
         btnConnect.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -149,6 +157,12 @@ public final class MainActivity extends Activity implements SshConnectionService
         wireTerminalViewport();
         applyTerminalTypeface();
         setTerminalSize(terminalSize);
+        if (ciSmokeTestMode) {
+            txtOutput.setEnabled(true);
+            txtOutput.post(new Runnable() {
+                @Override public void run() { txtOutput.requestFocus(); }
+            });
+        }
         txtOutput.setCursorVisible(false);
         requestNotificationPermissionIfNeeded();
 
@@ -461,6 +475,10 @@ public final class MainActivity extends Activity implements SshConnectionService
                     return TerminalInputHandler.handleArrowKeyAction(event.getAction(),
                             keyCode, terminalSender);
                 }
+                if (TerminalInputHandler.handleEscapeKeyAction(event.getAction(),
+                        keyCode, terminalSender)) {
+                    return true;
+                }
                 if (TerminalInputHandler.handleCtrlKeyAction(event.getAction(), keyCode,
                         event.isCtrlPressed(), terminalSender)) {
                     return true;
@@ -541,6 +559,9 @@ public final class MainActivity extends Activity implements SshConnectionService
     }
 
     private void sendRaw(final byte[] bytes) {
+        if (ciSmokeTestMode && bytes != null && bytes.length == 1 && bytes[0] == 0x1b) {
+            Log.i(TAG, CI_SMOKE_ESC_LOG_MARKER);
+        }
         if (sshService != null) { sshService.sendRaw(bytes); }
     }
 
@@ -616,6 +637,10 @@ public final class MainActivity extends Activity implements SshConnectionService
 
     private void setConnectionPanelCollapsed(boolean collapsed) {
         panelConnection.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+    }
+
+    private boolean isDebuggableBuild() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     private void setStatus(CharSequence s) { txtStatus.setText(s); }

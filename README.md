@@ -1,4 +1,5 @@
 # SSH Client for Android
+[![CI](https://github.com/bedro96/ssh_client_for_android/actions/workflows/ci.yml/badge.svg)](https://github.com/bedro96/ssh_client_for_android/actions/workflows/ci.yml)
 
 A small, working SSH client app for Android. The app opens an interactive
 remote shell over SSH (password authentication) and lets you stream output and

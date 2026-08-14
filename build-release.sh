@@ -59,8 +59,11 @@ D8="${BUILD_TOOLS_DIR}/d8"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
 APKSIGNER="${BUILD_TOOLS_DIR}/apksigner"
 APP_CATEGORY_PRODUCTIVITY="7"
+APK_DEBUGGABLE="${APK_DEBUGGABLE:-0}"
 BUILD_DIR="$(mktemp -d /tmp/ssh_client_for_android-build.XXXXXX)"
 RELEASE_DIR="${ROOT_DIR}/release"
+OUTPUT_APK="${OUTPUT_APK:-${RELEASE_DIR}/app-release.apk}"
+OUTPUT_DIR="$(dirname "${OUTPUT_APK}")"
 KEYSTORE_PATH="${BUILD_DIR}/release.keystore"
 KEYSTORE_PASSWORD="${RELEASE_KEYSTORE_PASSWORD:-$(python3 - <<'PY'
 import secrets
@@ -70,6 +73,14 @@ print(''.join(secrets.choice(alphabet) for _ in range(32)))
 PY
 )}"
 KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-${KEYSTORE_PASSWORD}}"
+KEY_ALIAS="${APK_KEY_ALIAS:-androidreleasekey}"
+KEY_DNAME="${APK_KEY_DNAME:-CN=Android Release,O=bedro96,C=US}"
+
+if [[ "${APK_DEBUGGABLE}" != "1" ]] \
+    && { [[ "${KEYSTORE_PASSWORD}" == "android" ]] || [[ "${KEY_PASSWORD}" == "android" ]]; }; then
+  echo "Refusing non-debug build signed with default debug password 'android'." >&2
+  exit 1
+fi
 
 require_file() {
   local path="$1"
@@ -95,7 +106,7 @@ if [[ ! -f "${PLATFORM_JAR}" ]]; then
   exit 1
 fi
 
-mkdir -p "${RELEASE_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex" "${LIBS_DIR}"
+mkdir -p "${RELEASE_DIR}" "${OUTPUT_DIR}" "${BUILD_DIR}/classes" "${BUILD_DIR}/dex" "${LIBS_DIR}"
 
 download_and_verify_jar() {
   local label="$1"
@@ -121,12 +132,18 @@ download_and_verify_jar "BouncyCastle" "${BCPROV_URL}" "${BCPROV_JAR}" "${BCPROV
 DEP_CLASSPATH="${JSCH_JAR}:${BCPROV_JAR}"
 
 "${AAPT2}" compile --dir "${ROOT_DIR}/app/src/main/res" -o "${BUILD_DIR}/resources.zip"
+AAPT2_LINK_ARGS=()
+if [[ "${APK_DEBUGGABLE}" == "1" ]]; then
+  AAPT2_LINK_ARGS+=(--debug-mode)
+fi
+
 "${AAPT2}" link \
   -I "${PLATFORM_JAR}" \
   --manifest "${ROOT_DIR}/app/src/main/AndroidManifest.xml" \
   --java "${BUILD_DIR}/generated" \
   --min-sdk-version "${MIN_SDK}" \
   --target-sdk-version "${TARGET_SDK}" \
+  "${AAPT2_LINK_ARGS[@]}" \
   --auto-add-overlay \
   -A "${ROOT_DIR}/app/src/main/assets" \
   -o "${BUILD_DIR}/base.apk" \
@@ -158,8 +175,8 @@ keytool -genkeypair \
   -keystore "${KEYSTORE_PATH}" \
   -storepass "${KEYSTORE_PASSWORD}" \
   -keypass "${KEY_PASSWORD}" \
-  -alias androidreleasekey \
-  -dname "CN=Android Release,O=bedro96,C=US" \
+  -alias "${KEY_ALIAS}" \
+  -dname "${KEY_DNAME}" \
   -keyalg RSA \
   -keysize 2048 \
   -validity 10000 >/dev/null 2>&1
@@ -167,16 +184,16 @@ keytool -genkeypair \
   --ks "${KEYSTORE_PATH}" \
   --ks-pass pass:"${KEYSTORE_PASSWORD}" \
   --key-pass pass:"${KEY_PASSWORD}" \
-  --ks-key-alias androidreleasekey \
+  --ks-key-alias "${KEY_ALIAS}" \
   --v4-signing-enabled false \
-  --out "${RELEASE_DIR}/app-release.apk" \
+  --out "${OUTPUT_APK}" \
   "${BUILD_DIR}/aligned.apk"
-"${APKSIGNER}" verify "${RELEASE_DIR}/app-release.apk"
+"${APKSIGNER}" verify "${OUTPUT_APK}"
 
-if ! "${AAPT2}" dump xmltree --file AndroidManifest.xml "${RELEASE_DIR}/app-release.apk" \
+if ! "${AAPT2}" dump xmltree --file AndroidManifest.xml "${OUTPUT_APK}" \
     | grep -Eq 'appCategory\(.*\)='"${APP_CATEGORY_PRODUCTIVITY}"'$'; then
   echo "Built APK is missing android:appCategory=\"productivity\" in AndroidManifest.xml" >&2
   exit 1
 fi
 
-echo "Built ${RELEASE_DIR}/app-release.apk"
+echo "Built ${OUTPUT_APK}"

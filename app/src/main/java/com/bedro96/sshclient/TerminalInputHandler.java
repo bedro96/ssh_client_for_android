@@ -16,6 +16,8 @@ final class TerminalInputHandler {
     static final int KEYCODE_DPAD_DOWN = 20;
     static final int KEYCODE_DPAD_LEFT = 21;
     static final int KEYCODE_DPAD_RIGHT = 22;
+    // Mirror android.view.KeyEvent.KEYCODE_ESCAPE so this stays Android-free/testable.
+    static final int KEYCODE_ESCAPE = 111;
 
     // Mirror android.view.KeyEvent.KEYCODE_ESCAPE so a hardware/bluetooth
     // keyboard's Escape key can be forwarded like the on-screen ESC toolbar
@@ -40,6 +42,7 @@ final class TerminalInputHandler {
     private static final byte[] CURSOR_DOWN = new byte[] {0x1b, '[', 'B'};
     private static final byte[] CURSOR_RIGHT = new byte[] {0x1b, '[', 'C'};
     private static final byte[] CURSOR_LEFT = new byte[] {0x1b, '[', 'D'};
+    private static final byte[] ESCAPE = new byte[] {0x1b};
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private TerminalInputHandler() { }
@@ -106,6 +109,26 @@ final class TerminalInputHandler {
         }
         if (action == ACTION_DOWN) {
             sender.send(sequence);
+        }
+        return true;
+    }
+
+    /**
+     * Handles a hardware Escape key. Sends the single ESC byte (0x1b) on key-down
+     * and consumes the matching key-up so the key is always forwarded remotely.
+     *
+     * Hardware ESC is not delivered through the soft-keyboard text-diff path, and
+     * if we do not consume/send it explicitly, raw-mode TUIs never receive ESC.
+     * This keeps hardware-key behavior aligned with the on-screen ESC toolbar key.
+     * We also consume ACTION_UP to keep the whole keypress owned by the terminal
+     * input path, preventing local/system handling from stealing part of the event.
+     */
+    static boolean handleEscapeKeyAction(int action, int keyCode, Sender sender) {
+        if (keyCode != KEYCODE_ESCAPE) {
+            return false;
+        }
+        if (action == ACTION_DOWN) {
+            sender.send(ESCAPE);
         }
         return true;
     }
