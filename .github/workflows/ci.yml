@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test-smoke:
     runs-on: ubuntu-latest
@@ -22,6 +25,8 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
+          # Build against a current platform/build-tools, then smoke-test behavior
+          # on minSdk API 24 via emulator.
           sdkmanager --install \
             "platform-tools" \
             "build-tools;36.0.0" \

@@ -20,7 +20,7 @@ public final class TerminalInputHandlerTest {
         testArrowKeysMapToAnsiCursorSequences();
         testArrowKeyDownSendsSequenceAndUpIsConsumedSilently();
         testNonArrowKeyIsNotHandledByArrowHandler();
-        testEscapeKeyDownSendsEscAndUpIsConsumedSilently();
+        testEscapeKeyDownSendsEscByteAndUpIsConsumedSilently();
         testNonEscapeKeyIsNotHandledByEscapeHandler();
         testCtrlJMapsToLineFeed();
         testCtrlKeyDownSendsControlByteAndUpIsConsumedSilently();
@@ -150,7 +150,7 @@ public final class TerminalInputHandlerTest {
                 "a non-arrow key has no cursor sequence");
     }
 
-    private static void testEscapeKeyDownSendsEscAndUpIsConsumedSilently() {
+    private static void testEscapeKeyDownSendsEscByteAndUpIsConsumedSilently() {
         Capture capture = new Capture();
         assertTrue(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_DOWN,
                 TerminalInputHandler.KEYCODE_ESCAPE, capture),

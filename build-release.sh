@@ -59,6 +59,7 @@ D8="${BUILD_TOOLS_DIR}/d8"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
 APKSIGNER="${BUILD_TOOLS_DIR}/apksigner"
 APP_CATEGORY_PRODUCTIVITY="7"
+APK_DEBUGGABLE="${APK_DEBUGGABLE:-0}"
 BUILD_DIR="$(mktemp -d /tmp/ssh_client_for_android-build.XXXXXX)"
 RELEASE_DIR="${ROOT_DIR}/release"
 OUTPUT_APK="${OUTPUT_APK:-${RELEASE_DIR}/app-release.apk}"
@@ -74,6 +75,12 @@ PY
 KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-${KEYSTORE_PASSWORD}}"
 KEY_ALIAS="${APK_KEY_ALIAS:-androidreleasekey}"
 KEY_DNAME="${APK_KEY_DNAME:-CN=Android Release,O=bedro96,C=US}"
+
+if [[ "${APK_DEBUGGABLE}" != "1" ]] \
+    && { [[ "${KEYSTORE_PASSWORD}" == "android" ]] || [[ "${KEY_PASSWORD}" == "android" ]]; }; then
+  echo "Refusing non-debug build signed with default debug password 'android'." >&2
+  exit 1
+fi
 
 require_file() {
   local path="$1"
@@ -125,12 +132,18 @@ download_and_verify_jar "BouncyCastle" "${BCPROV_URL}" "${BCPROV_JAR}" "${BCPROV
 DEP_CLASSPATH="${JSCH_JAR}:${BCPROV_JAR}"
 
 "${AAPT2}" compile --dir "${ROOT_DIR}/app/src/main/res" -o "${BUILD_DIR}/resources.zip"
+AAPT2_LINK_ARGS=()
+if [[ "${APK_DEBUGGABLE}" == "1" ]]; then
+  AAPT2_LINK_ARGS+=(--debug-mode)
+fi
+
 "${AAPT2}" link \
   -I "${PLATFORM_JAR}" \
   --manifest "${ROOT_DIR}/app/src/main/AndroidManifest.xml" \
   --java "${BUILD_DIR}/generated" \
   --min-sdk-version "${MIN_SDK}" \
   --target-sdk-version "${TARGET_SDK}" \
+  "${AAPT2_LINK_ARGS[@]}" \
   --auto-add-overlay \
   -A "${ROOT_DIR}/app/src/main/assets" \
   -o "${BUILD_DIR}/base.apk" \
