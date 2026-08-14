@@ -449,6 +449,10 @@ public final class MainActivity extends Activity implements SshConnectionService
         };
         txtOutput.setOnKeyListener(new View.OnKeyListener() {
             @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
+                if (TerminalInputHandler.handleEscapeKeyAction(event.getAction(), keyCode,
+                        terminalSender)) {
+                    return true;
+                }
                 if (keyCode == KeyEvent.KEYCODE_TAB) {
                     return TerminalInputHandler.handleTabKeyAction(event.getAction(),
                             event.isShiftPressed(), terminalKeyState, terminalSender);
