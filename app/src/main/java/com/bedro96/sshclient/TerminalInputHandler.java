@@ -16,9 +16,6 @@ final class TerminalInputHandler {
     static final int KEYCODE_DPAD_DOWN = 20;
     static final int KEYCODE_DPAD_LEFT = 21;
     static final int KEYCODE_DPAD_RIGHT = 22;
-    // Mirror android.view.KeyEvent.KEYCODE_ESCAPE so this stays Android-free/testable.
-    static final int KEYCODE_ESCAPE = 111;
-
     // Mirror android.view.KeyEvent.KEYCODE_ESCAPE so a hardware/bluetooth
     // keyboard's Escape key can be forwarded like the on-screen ESC toolbar
     // button, without an Android dependency.
@@ -164,26 +161,6 @@ final class TerminalInputHandler {
         }
         if (action == ACTION_DOWN) {
             sender.send(sequence);
-        }
-        return true;
-    }
-
-    /**
-     * Handles a hardware Escape key so it reaches the remote shell exactly
-     * like the on-screen ESC toolbar button. Without this, a physical
-     * Escape key press is left unconsumed by the terminal's key listener and
-     * is inconsistently intercepted by the system/IME instead of being
-     * forwarded, which is especially disruptive for raw-mode TUIs (e.g. the
-     * GitHub Copilot CLI running inside a remote tmux pane) that rely on ESC.
-     * Sends {@code 0x1b} on key-down and consumes the matching key-up.
-     * Returns {@code false} for any other key.
-     */
-    static boolean handleEscapeKeyAction(int action, int keyCode, Sender sender) {
-        if (keyCode != KEYCODE_ESCAPE) {
-            return false;
-        }
-        if (action == ACTION_DOWN) {
-            sender.send(new byte[] {0x1b});
         }
         return true;
     }

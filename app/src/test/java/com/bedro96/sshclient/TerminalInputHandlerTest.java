@@ -26,8 +26,6 @@ public final class TerminalInputHandlerTest {
         testCtrlKeyDownSendsControlByteAndUpIsConsumedSilently();
         testCtrlKeyActionIgnoredWhenCtrlNotPressed();
         testNonLetterKeyIsNotHandledByCtrlHandler();
-        testEscapeKeyDownSendsEscByteAndUpIsConsumedSilently();
-        testNonEscapeKeyIsNotHandledByEscapeHandler();
         System.out.println("TERMINAL INPUT HANDLER TESTS PASSED");
     }
 
@@ -210,27 +208,6 @@ public final class TerminalInputHandlerTest {
         assertEquals(0, capture.sendCount, "a non-letter key must not send bytes");
         assertTrue(TerminalInputHandler.ctrlKeySequence(999) == null,
                 "a non-letter key has no ctrl sequence");
-    }
-
-    private static void testEscapeKeyDownSendsEscByteAndUpIsConsumedSilently() {
-        Capture capture = new Capture();
-        assertTrue(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_DOWN,
-                TerminalInputHandler.KEYCODE_ESCAPE, capture),
-                "escape key down should be consumed");
-        assertEquals(1, capture.sendCount, "escape key down should send once");
-        assertArrayEquals(new byte[] {0x1b}, capture.bytes, "escape key down should send ESC");
-        assertTrue(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_UP,
-                TerminalInputHandler.KEYCODE_ESCAPE, capture),
-                "escape key up should be consumed");
-        assertEquals(1, capture.sendCount, "escape key up should not send additional bytes");
-    }
-
-    private static void testNonEscapeKeyIsNotHandledByEscapeHandler() {
-        Capture capture = new Capture();
-        assertFalse(TerminalInputHandler.handleEscapeKeyAction(TerminalInputHandler.ACTION_DOWN,
-                TerminalInputHandler.KEYCODE_A, capture),
-                "a non-escape key must not be handled by the escape handler");
-        assertEquals(0, capture.sendCount, "a non-escape key must not send bytes");
     }
 
     private static void assertTrue(boolean value, String message) {
