@@ -40,6 +40,7 @@ public final class TerminalAnsiProcessorTest {
         testCompleteUtf8SequenceBeforeTrailingPartialStillDecodes();
         testIncompleteUtf8SequenceDoesNotCrossIntoControls();
         testTruecolorSgrForegroundAndBackground();
+        testBoldBrightensStandardColorRegardlessOfOrder();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -86,6 +87,33 @@ public final class TerminalAnsiProcessorTest {
             assertEquals(expected, TerminalAnsiProcessor.xterm256IndexToRgb(index),
                     "gray index " + index);
         }
+    }
+
+    // Regression test: `ls -al` typically colors directories with bold blue ("\u001b[01;34m"),
+    // which used to render as the hard-to-read dark blue (0x0000ee) instead of the brighter
+    // variant (0x5c5cff). Verify bold upgrades the base color no matter which SGR code arrives
+    // first.
+    private static void testBoldBrightensStandardColorRegardlessOfOrder() {
+        TerminalAnsiProcessor processorBoldFirst = new TerminalAnsiProcessor();
+        List<Segment> boldFirst = new ArrayList<>();
+        processorBoldFirst.process("\u001b[1;34mD", new Capture(boldFirst));
+        assertSegment(boldFirst.get(0), "D", 0x5c5cff, null, "bold then color");
+
+        TerminalAnsiProcessor processorColorFirst = new TerminalAnsiProcessor();
+        List<Segment> colorFirst = new ArrayList<>();
+        processorColorFirst.process("\u001b[34;1mD", new Capture(colorFirst));
+        assertSegment(colorFirst.get(0), "D", 0x5c5cff, null, "color then bold");
+
+        TerminalAnsiProcessor processorPlain = new TerminalAnsiProcessor();
+        List<Segment> plain = new ArrayList<>();
+        processorPlain.process("\u001b[34mD", new Capture(plain));
+        assertSegment(plain.get(0), "D", 0x0000ee, null, "non-bold color stays dark");
+
+        TerminalAnsiProcessor processorUnbold = new TerminalAnsiProcessor();
+        List<Segment> unbold = new ArrayList<>();
+        processorUnbold.process("\u001b[1;34m", new Capture(unbold));
+        processorUnbold.process("\u001b[22mD", new Capture(unbold));
+        assertSegment(unbold.get(0), "D", 0x0000ee, null, "unbolding reverts to dark color");
     }
 
     private static void testExtendedSgrForegroundAndBackground() {

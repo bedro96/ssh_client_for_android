@@ -44,6 +44,13 @@ public final class TerminalAnsiProcessor {
     private boolean bold;
     private Integer foregroundRgb;
     private Integer backgroundRgb;
+    // Base palette index (0-7) for the current foreground/background when it was set via the
+    // standard SGR 30-37/40-47 codes. Kept so that a later/earlier bold toggle can upgrade the
+    // color to its brighter counterpart (e.g. "ESC[1;34m" directory blue) regardless of the
+    // order the bold and color codes arrive in, matching standard terminal behavior and keeping
+    // colors like blue readable on a black background.
+    private Integer foregroundBaseIndex;
+    private Integer backgroundBaseIndex;
 
     interface SegmentConsumer {
         void accept(String text, boolean bold, Integer foregroundRgb, Integer backgroundRgb);
@@ -79,6 +86,8 @@ public final class TerminalAnsiProcessor {
         bold = false;
         foregroundRgb = null;
         backgroundRgb = null;
+        foregroundBaseIndex = null;
+        backgroundBaseIndex = null;
     }
 
     static int xterm256IndexToRgb(int index) {
@@ -437,8 +446,10 @@ public final class TerminalAnsiProcessor {
                     int rgb = xterm256IndexToRgb(paletteIndex);
                     if (foreground) {
                         foregroundRgb = rgb;
+                        foregroundBaseIndex = null;
                     } else {
                         backgroundRgb = rgb;
+                        backgroundBaseIndex = null;
                     }
                 }
                 return colorIndexPos;
@@ -457,8 +468,10 @@ public final class TerminalAnsiProcessor {
                     int rgb = (red << 16) | (green << 8) | blue;
                     if (foreground) {
                         foregroundRgb = rgb;
+                        foregroundBaseIndex = null;
                     } else {
                         backgroundRgb = rgb;
+                        backgroundBaseIndex = null;
                     }
                 }
             }
@@ -472,38 +485,60 @@ public final class TerminalAnsiProcessor {
             bold = false;
             foregroundRgb = null;
             backgroundRgb = null;
+            foregroundBaseIndex = null;
+            backgroundBaseIndex = null;
             return;
         }
         if (code == 1) {
             bold = true;
+            recomputeBaseColors();
             return;
         }
         if (code == 21 || code == 22) {
             bold = false;
+            recomputeBaseColors();
             return;
         }
         if (code == 39) {
             foregroundRgb = null;
+            foregroundBaseIndex = null;
             return;
         }
         if (code == 49) {
             backgroundRgb = null;
+            backgroundBaseIndex = null;
             return;
         }
         if (code >= 30 && code <= 37) {
-            foregroundRgb = xterm256IndexToRgb(code - 30);
+            foregroundBaseIndex = code - 30;
+            foregroundRgb = xterm256IndexToRgb(foregroundBaseIndex + (bold ? 8 : 0));
             return;
         }
         if (code >= 40 && code <= 47) {
-            backgroundRgb = xterm256IndexToRgb(code - 40);
+            backgroundBaseIndex = code - 40;
+            backgroundRgb = xterm256IndexToRgb(backgroundBaseIndex + (bold ? 8 : 0));
             return;
         }
         if (code >= 90 && code <= 97) {
+            foregroundBaseIndex = null;
             foregroundRgb = xterm256IndexToRgb((code - 90) + 8);
             return;
         }
         if (code >= 100 && code <= 107) {
+            backgroundBaseIndex = null;
             backgroundRgb = xterm256IndexToRgb((code - 100) + 8);
+        }
+    }
+
+    // Re-derives foreground/background RGB from their base palette index whenever bold is
+    // toggled, so a standard color (SGR 30-37/40-47) upgrades to its bright variant while bold
+    // is active, no matter whether the bold or color code arrived first.
+    private void recomputeBaseColors() {
+        if (foregroundBaseIndex != null) {
+            foregroundRgb = xterm256IndexToRgb(foregroundBaseIndex + (bold ? 8 : 0));
+        }
+        if (backgroundBaseIndex != null) {
+            backgroundRgb = xterm256IndexToRgb(backgroundBaseIndex + (bold ? 8 : 0));
         }
     }
 
