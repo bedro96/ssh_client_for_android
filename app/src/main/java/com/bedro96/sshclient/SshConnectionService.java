@@ -177,6 +177,17 @@ public final class SshConnectionService extends Service {
                     session = s;
                     channel = ch;
                     remoteIn = out;
+                    // A resize can race ahead of this handshake: MainActivity's layout
+                    // listener collapses the connection-input panel and calls
+                    // resizeTerminal(...) almost immediately after tapping CONNECT, often
+                    // before `channel` above is assigned. resizeTerminal() applies that
+                    // resize to the local TerminalScreen unconditionally but skips
+                    // ch.setPtySize(...) while channel is still null (see its `ch != null`
+                    // guard) — so without this, the remote PTY (and tmux) would be
+                    // silently left at the size the channel was opened with, permanently
+                    // desynced from the local grid. Re-apply the latest known size now
+                    // that the channel exists, closing that window.
+                    ch.setPtySize(lastCols, lastRows, 0, 0);
                     terminalScreen.reset();
                     ansiProcessor.reset();
                     startReader(in);

@@ -61,7 +61,8 @@ javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalInputHandlerTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalGeometryTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshReaderConfigTest.java" \
-  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/ChromeLayoutCompactnessTest.java"
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/ChromeLayoutCompactnessTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshResizeRaceTest.java"
 
 echo "Running SshKeyAuthTest (multi-release disabled to simulate Android)..."
 java -Djdk.util.jar.enableMultiRelease=false \
@@ -100,3 +101,8 @@ echo "Running ChromeLayoutCompactnessTest..."
 java -classpath "${BUILD_DIR}:${CP}" \
   -Dchrome.layout.test.repoRoot="${ROOT_DIR}" \
   com.bedro96.sshclient.ChromeLayoutCompactnessTest
+
+echo "Running SshResizeRaceTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  -Dssh.resize.race.test.repoRoot="${ROOT_DIR}" \
+  com.bedro96.sshclient.SshResizeRaceTest

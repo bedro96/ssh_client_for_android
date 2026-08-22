@@ -115,6 +115,15 @@ with:
 - aggressive resize enabled so rotate/IME resizes exercise the concurrent redraw
   path from issue #54.
 
+**Pitfall (caused a false-positive "corruption" finding in #57):** keep
+`status-left`/`status-right` short enough to fit the narrow emulator terminal
+(often ~25-49 columns). A format like `"#S #{window_layout}"` easily exceeds
+that width, and tmux's own truncation of the overflowing text looks exactly
+like app-side corruption (e.g. a clipped-and-glued `"smoke ... moke 3d41,...`
+string) even though the terminal is rendering it correctly. Prefer something
+like `"#{pane_width}x#{pane_height} %H:%M:%S"` — long enough to prove resizes
+propagated, short enough to never need truncating.
+
 ## 5. Scripted tmux smoke run
 
 Once the emulator, APK, and `sshtest` account are ready, prefer the dedicated
