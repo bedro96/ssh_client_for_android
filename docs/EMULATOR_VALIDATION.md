@@ -52,20 +52,21 @@ adb shell monkey -p com.bedro96.sshclient -c android.intent.category.LAUNCHER 1
 ## 3. Get EXACT widget coordinates (never eyeball)
 
 ```bash
-adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml /tmp/ui.xml
-grep -oE '(resource-id|text|bounds)="[^"]*"' /tmp/ui.xml | paste - - -
+adb shell uiautomator dump
+adb pull /sdcard/window_dump.xml window_dump.xml
+grep -oE '(resource-id|text|bounds)="[^"]*"' window_dump.xml | paste - - -
 ```
 `bounds="[x1,y1][x2,y2]"` → tap center = `((x1+x2)/2, (y1+y2)/2)`.
 Current MainActivity layout (re-dump if the layout changes):
 
 | Widget        | resource-id   | bounds                  | tap center   |
 |---------------|---------------|-------------------------|--------------|
-| Host field    | (EditText #1) | `[0,422][793,546]`      | `396 484`    |
-| Port field    | (EditText #2) | `[815,422][1080,546]`   | `947 484`    |
-| Username      | (EditText #3) | `[0,563][529,687]`      | `264 625`    |
-| Password      | (EditText #4) | `[551,563][1080,687]`   | `815 625`    |
-| CONNECT       | `btnConnect`  | `[835,853][1080,985]`   | `957 919`    |
-| Terminal out  | `txtOutput`   | `[17,1024][1063,2191]`  | `540 1607`   |
+| Host field    | `editHost`    | `[32,286][778,404]`     | `405 345`    |
+| Port field    | `editPort`    | `[799,286][1048,404]`   | `923 345`    |
+| Username      | `editUser`    | `[32,420][529,538]`     | `280 479`    |
+| Password      | `editPassword`| `[550,420][1048,538]`   | `799 479`    |
+| CONNECT       | `btnConnect`  | `[817,696][1048,822]`   | `932 759`    |
+| Terminal out  | `txtOutput`   | `[48,859][1032,2289]`   | `540 1574`   |
 
 ### Typing rules that actually work
 - `adb shell input tap X Y` then `adb shell input text "..."`. Text always goes
@@ -73,6 +74,10 @@ Current MainActivity layout (re-dump if the layout changes):
   move focus between these EditTexts, so tap each field explicitly.
 - To clear a field: tap it, `input keyevent KEYCODE_MOVE_END`, then loop
   `input keyevent 67` (DEL) ~30x. Verify with a screenshot before typing.
+- `adb shell input text "10.0.2.2"` is **not** reliable for the host field on
+  this emulator; it truncates after the second dot. Enter `10.0.2.2` with
+  keyevents instead:
+  `8 7 56 7 56 9 56 9` (`1 0 . 0 . 2 . 2`).
 - Do **not** press BACK (keyevent 4) to dismiss the keyboard — it exits the app.
   Username/Password rows sit above the IME, so they stay tappable with the
   keyboard open.
@@ -91,25 +96,86 @@ sudo systemctl restart ssh
 sudo sshd -T | grep -i passwordauthentication   # expect: yes
 ```
 
-Login runs `~sshtest/repro.sh` (via `.bash_profile: exec ~/repro.sh`) which draws
-a full-width box using the PTY `tput cols`/`tput lines` — this reproduces the
-Copilot-CLI border "line-and-a-half" wrap if the app soft-wraps full-width rows.
-
-## 5. Drive the connect flow + capture terminal
+Install `tmux`, then switch the login repro from the old `repro.sh` to the tmux
+scenario for issue #56:
 
 ```bash
-adb shell input tap 396 484;  adb shell input text "10.0.2.2"
-adb shell input tap 264 625;  adb shell input text "sshtest"
-adb shell input tap 815 625;  adb shell input text "sshtest123"
-adb shell input tap 957 919                      # CONNECT
-sleep 4
-adb exec-out screencap -p > /tmp/term.png        # inspect terminal rendering
+sudo apt-get install -y tmux
+printf 'exec /home/sshtest/tmux-repro.sh\n' | sudo tee /home/sshtest/.bash_profile
+sudo -u sshtest env HOME=/home/sshtest TMUX_REPRO_NO_ATTACH=1 /home/sshtest/tmux-repro.sh
+sudo -u sshtest tmux list-panes -t smoke -F '#{pane_index} #{pane_current_command} #{pane_width}x#{pane_height}'
 ```
 
-Validation check: the box top/bottom borders must each occupy **exactly one**
-display line (no wrap to a second line) and every row must be column-aligned.
+`~sshtest/tmux-repro.sh` creates or re-attaches a `tmux` session named `smoke`
+with:
 
-## 6. Offline unit tests (fast, no emulator)
+- one pane continuously printing redraw-heavy ASCII/box rows,
+- one pane continuously printing Korean UTF-8 text,
+- tmux's status bar left enabled so status-line corruption is visible,
+- aggressive resize enabled so rotate/IME resizes exercise the concurrent redraw
+  path from issue #54.
+
+## 5. Scripted tmux smoke run
+
+Once the emulator, APK, and `sshtest` account are ready, prefer the dedicated
+automation script:
+
+```bash
+cd /home/azureuser/ssh_client_for_android
+export ANDROID_SDK_ROOT=/tmp/android-sdk
+./run-emulator-tmux-smoke-test.sh
+```
+
+Artifacts are written to `emulator-artifacts/tmux-smoke/`:
+
+- `after-connect.png`
+- `mid-scroll.png`
+- `rotated.png`
+- `after-rotate-back.png`
+- `logcat.txt`
+
+The script computes tap coordinates from `uiautomator dump` on every run, types
+the host IP with keyevents, connects to `10.0.2.2`, rotates to landscape and
+back, and saves screenshots/logcat without guessing.
+
+## 6. Manual tmux repro + expected results
+
+```bash
+adb shell input tap 405 345                      # Host
+adb shell input keyevent 123
+for i in $(seq 1 32); do adb shell input keyevent 67; done
+for key in 8 7 56 7 56 9 56 9; do adb shell input keyevent "$key"; done
+
+adb shell input tap 280 479;  adb shell input text "sshtest"
+adb shell input tap 799 479;  adb shell input text "sshtest123"
+adb shell input tap 932 759                      # CONNECT
+sleep 8
+adb exec-out screencap -p > after-connect.png
+sleep 6
+adb exec-out screencap -p > mid-scroll.png
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+sleep 4
+adb exec-out screencap -p > rotated.png
+adb shell settings put system user_rotation 0
+sleep 4
+adb exec-out screencap -p > after-rotate-back.png
+```
+
+Validation checks:
+
+- no missing or duplicated rows while the panes are scrolling,
+- no mojibake in `한글 테스트 유니코드`,
+- box-drawing separators and status bar stay aligned after rotate/resize,
+- tmux status bar remains a single intact line (no stale fragments, overlap, or
+  duplicated text),
+- no crash/exception in `adb logcat -d | grep -iE 'sshclient|TerminalScreen|Exception|ANR'`.
+
+If a screenshot shows split timestamps, missing chunks, broken Hangul, or a
+corrupted tmux status line, treat that as a **real regression signal** and save
+the screenshot/logcat as evidence for follow-up triage.
+
+## 7. Offline unit tests (fast, no emulator)
 
 ```bash
 ./run-tests.sh        # SshKeyAuth, Terminal* incl. TerminalGeometryTest

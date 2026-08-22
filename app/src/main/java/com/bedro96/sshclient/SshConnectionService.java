@@ -61,6 +61,15 @@ public final class SshConnectionService extends Service {
     private final TerminalAnsiProcessor ansiProcessor = new TerminalAnsiProcessor();
     private final TerminalScreen terminalScreen = new TerminalScreen();
 
+    {
+        // DA (CSI c) and DSR (CSI n) queries need to write bytes back to the remote
+        // shell; wiring this here (rather than a hard dependency inside TerminalScreen)
+        // keeps the same decoupling pattern as TerminalAnsiProcessor.SegmentConsumer.
+        terminalScreen.setReplySink(new TerminalScreen.ReplySink() {
+            @Override public void send(byte[] bytes) { sendRaw(bytes); }
+        });
+    }
+
     private volatile Session session;
     private volatile ChannelShell channel;
     private volatile OutputStream remoteIn;
@@ -242,7 +251,7 @@ public final class SshConnectionService extends Service {
     private void startReader(final InputStream in) {
         Thread t = new Thread(new Runnable() {
             @Override public void run() {
-                byte[] buf = new byte[4096];
+                byte[] buf = new byte[1024];
                 try {
                     while (!Thread.currentThread().isInterrupted()) {
                         int n = in.read(buf);

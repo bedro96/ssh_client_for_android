@@ -41,6 +41,7 @@ public final class TerminalAnsiProcessorTest {
         testIncompleteUtf8SequenceDoesNotCrossIntoControls();
         testTruecolorSgrForegroundAndBackground();
         testBoldBrightensStandardColorRegardlessOfOrder();
+        testKoreanCharacterSplitAcrossTwo1024ByteReadsDecodesCorrectly();
         System.out.println("ALL TESTS PASSED");
     }
 
@@ -468,6 +469,40 @@ public final class TerminalAnsiProcessorTest {
         processor.process("\u001b[38;2;17;34;51;48;2;68;85;102mT", new Capture(segments));
         assertEquals(1, segments.size(), "truecolor sgr segment count");
         assertSegment(segments.get(0), "T", 0x112233, 0x445566, "truecolor sgr");
+    }
+
+    // Reproduces the production reader thread's real 1024-byte read buffer
+    // (see SshConnectionService#startReader): a Korean (3-byte UTF-8) character
+    // is positioned so its bytes straddle the boundary between the first and
+    // second 1024-byte read, and the two chunks are fed to the processor
+    // exactly as the reader thread would, one at a time, in order.
+    private static void testKoreanCharacterSplitAcrossTwo1024ByteReadsDecodesCorrectly() {
+        final int READ_BUFFER_SIZE = 1024;
+        StringBuilder original = new StringBuilder();
+        for (int i = 0; i < 1022; i++) {
+            original.append('A');
+        }
+        // "한글" straddles the 1024-byte boundary: "한" starts at byte offset
+        // 1022 and its 3 UTF-8 bytes (ED 95 9C) span offsets 1022-1024, so the
+        // first 1024-byte read ends mid-character.
+        original.append("한글 suffix");
+
+        byte[] bytes = original.toString().getBytes(StandardCharsets.UTF_8);
+        int firstChunkLength = Math.min(READ_BUFFER_SIZE, bytes.length);
+        byte[] chunk1 = new byte[firstChunkLength];
+        System.arraycopy(bytes, 0, chunk1, 0, firstChunkLength);
+        byte[] chunk2 = new byte[bytes.length - firstChunkLength];
+        System.arraycopy(bytes, firstChunkLength, chunk2, 0, chunk2.length);
+
+        TerminalAnsiProcessor processor = new TerminalAnsiProcessor();
+        List<Segment> segments = new ArrayList<>();
+        Capture capture = new Capture(segments);
+
+        processor.process(chunk1, 0, chunk1.length, capture);
+        processor.process(chunk2, 0, chunk2.length, capture);
+
+        assertEquals(original.toString(), joinText(segments),
+                "Korean text split across two 1024-byte reads must decode without corruption");
     }
 
     private static void assertSegment(

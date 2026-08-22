@@ -1,5 +1,6 @@
 package com.bedro96.sshclient;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,28 @@ final class TerminalScreen {
     private static final char ESC = 0x1b;
     private static final char DEL_CHAR = 0x7f;
     private static final int NO_COLOR = -1;
+
+    // Reply to CSI c / CSI 0c (primary Device Attributes) with a VT500-class
+    // capability set matching real xterm-256color: 132 columns (1), printer
+    // port (2), selective erase (6), national replacement charsets (9),
+    // technical characters (15), user-defined keys (18), horizontal scrolling
+    // (21), ANSI color (22) — the "64" leading token is xterm's VT500 class id.
+    private static final byte[] PRIMARY_DA_REPLY =
+            (ESC + "[?64;1;2;6;9;15;18;21;22c").getBytes(StandardCharsets.US_ASCII);
+    // Reply to CSI > c (secondary Device Attributes): terminal type 41 ("xterm"),
+    // a plausible firmware/patch version, and 0 for "no PC keyboard".
+    private static final byte[] SECONDARY_DA_REPLY =
+            (ESC + "[>41;300;0c").getBytes(StandardCharsets.US_ASCII);
+    // Reply to CSI 5n (Device Status Report): "terminal OK".
+    private static final byte[] DSR_OK_REPLY = (ESC + "[0n").getBytes(StandardCharsets.US_ASCII);
+
+    /** Receives bytes that {@link TerminalScreen} needs to send back to the remote shell in
+     * response to a query sequence (Device Attributes, Device Status Report, ...). Mirrors the
+     * {@link TerminalAnsiProcessor.SegmentConsumer} callback pattern already used to move data
+     * out of this class without a hard dependency on {@code SshConnectionService}. */
+    interface ReplySink {
+        void send(byte[] bytes);
+    }
 
     private Screen primary;
     private Screen alternate;
@@ -28,7 +51,14 @@ final class TerminalScreen {
     private boolean cursorVisible = true;
     private boolean useAlternate;
     private boolean wrapPending;
+    private boolean bracketedPasteMode;
     private String pendingEscape = "";
+    // No-op by default: TerminalScreen is exercised directly by unit tests and by
+    // SshConnectionService (which wires a real sink once a session connects). Never
+    // null so applyCsi() can call it unconditionally.
+    private ReplySink replySink = new ReplySink() {
+        @Override public void send(byte[] bytes) { }
+    };
 
     TerminalScreen() {
         this(DEFAULT_ROWS, DEFAULT_COLS);
@@ -44,7 +74,16 @@ final class TerminalScreen {
         scrollBottom = rows - 1;
     }
 
-    void reset() {
+    // append()/resize()/reset()/snapshot() are the only entry points TerminalScreen
+    // exposes across threads: SshConnectionService's background reader thread calls
+    // append() for every incoming chunk while the UI thread calls resize() (rotation,
+    // keyboard show/hide) and reset() (reconnect), and snapshot() is read for
+    // rendering from the UI thread too. None of the mutated fields (active, row, col,
+    // scrollTop/scrollBottom, scrollback, ...) were ever guarded, so a resize
+    // interleaved with an in-flight append could observe/mutate them inconsistently
+    // (see issue #54). Synchronizing on `this` for all four keeps the fix minimal and
+    // consistent with the existing single-instance-shared-across-threads design.
+    synchronized void reset() {
         int rows = active.rows;
         int cols = active.cols;
         primary = new Screen(rows, cols);
@@ -62,10 +101,27 @@ final class TerminalScreen {
         cursorVisible = true;
         useAlternate = false;
         wrapPending = false;
+        bracketedPasteMode = false;
         pendingEscape = "";
     }
 
-    void resize(int rows, int cols) {
+    /**
+     * Registers where DA/DSR/CPR query replies should be written. Defaults to a no-op sink so
+     * unit tests (and any TerminalScreen used before a connection exists) can call append()
+     * without wiring one up. SshConnectionService sets a real sink that forwards to the SSH
+     * remote input stream.
+     */
+    synchronized void setReplySink(ReplySink sink) {
+        replySink = sink != null ? sink : new ReplySink() {
+            @Override public void send(byte[] bytes) { }
+        };
+    }
+
+    boolean isBracketedPasteMode() {
+        return bracketedPasteMode;
+    }
+
+    synchronized void resize(int rows, int cols) {
         rows = Math.max(1, rows);
         cols = Math.max(1, cols);
         if (rows == active.rows && cols == active.cols) {
@@ -96,7 +152,7 @@ final class TerminalScreen {
         append(chunk, false, null, null);
     }
 
-    void append(CharSequence chunk, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
+    synchronized void append(CharSequence chunk, boolean bold, Integer foregroundRgb, Integer backgroundRgb) {
         if (chunk == null || chunk.length() == 0) {
             return;
         }
@@ -160,7 +216,7 @@ final class TerminalScreen {
         }
     }
 
-    Snapshot snapshot(int maxChars) {
+    synchronized Snapshot snapshot(int maxChars) {
         int safeMaxChars = Math.max(0, maxChars);
         StringBuilder text = new StringBuilder();
         List<StyleRun> runs = new ArrayList<>();
@@ -280,6 +336,26 @@ final class TerminalScreen {
             eraseLine(parseCsiNumber(params, 0, 0));
             return;
         }
+        if (command == 'L') {
+            insertLines(Math.max(1, parseCsiNumber(params, 0, 1)));
+            return;
+        }
+        if (command == 'M') {
+            deleteLines(Math.max(1, parseCsiNumber(params, 0, 1)));
+            return;
+        }
+        if (command == '@') {
+            insertChars(Math.max(1, parseCsiNumber(params, 0, 1)));
+            return;
+        }
+        if (command == 'P') {
+            deleteChars(Math.max(1, parseCsiNumber(params, 0, 1)));
+            return;
+        }
+        if (command == 'X') {
+            eraseChars(Math.max(1, parseCsiNumber(params, 0, 1)));
+            return;
+        }
         if (command == 'r') {
             int top = clamp(parseCsiNumber(params, 0, 1), 1, active.rows);
             int bottom = clamp(parseCsiNumber(params, 1, active.rows), 1, active.rows);
@@ -301,6 +377,41 @@ final class TerminalScreen {
         }
         if (command == 'h' || command == 'l') {
             applyMode(params, command == 'h');
+            return;
+        }
+        if (command == 'c') {
+            replyDeviceAttributes(params);
+            return;
+        }
+        if (command == 'n') {
+            replyDeviceStatusReport(params);
+        }
+    }
+
+    // CSI c (bare/"0"): primary Device Attributes. CSI > c: secondary Device Attributes.
+    // Real programs (tmux, vim, shells with fancy prompts) send these to probe terminal
+    // capabilities and can stall or misbehave waiting for a reply that never arrives.
+    private void replyDeviceAttributes(String params) {
+        if (params != null && params.startsWith(">")) {
+            replySink.send(SECONDARY_DA_REPLY);
+            return;
+        }
+        if (params == null || params.isEmpty() || "0".equals(params)) {
+            replySink.send(PRIMARY_DA_REPLY);
+        }
+    }
+
+    // CSI 5n: "are you OK?" -> reply "I'm OK". CSI 6n: cursor position report, used by
+    // e.g. vim/readline to locate the cursor; reply with the current 1-based row/column.
+    private void replyDeviceStatusReport(String params) {
+        int mode = parseCsiNumber(params, 0, 0);
+        if (mode == 5) {
+            replySink.send(DSR_OK_REPLY);
+            return;
+        }
+        if (mode == 6) {
+            String reply = ESC + "[" + (row + 1) + ";" + (col + 1) + "R";
+            replySink.send(reply.getBytes(StandardCharsets.US_ASCII));
         }
     }
 
@@ -308,9 +419,34 @@ final class TerminalScreen {
         if (params == null || params.isEmpty() || params.charAt(0) != '?') {
             return;
         }
-        String mode = params.substring(1);
+        // xterm allows batching several DEC private modes into one sequence, e.g.
+        // "ESC[?1000;2004;1006h"; apply each token individually so every mode in
+        // the batch takes effect, not just the first.
+        String[] modes = params.substring(1).split(";", -1);
+        for (String mode : modes) {
+            applyPrivateMode(mode, enable);
+        }
+    }
+
+    private void applyPrivateMode(String mode, boolean enable) {
         if ("25".equals(mode)) {
             cursorVisible = enable;
+            return;
+        }
+        if ("2004".equals(mode)) {
+            // Bracketed paste: no local UI paste path wraps input in ESC[200~/201~ today
+            // (see TerminalInputHandler), so just track the flag rather than leaking the
+            // raw mode-set/reset sequence into the visible grid.
+            bracketedPasteMode = enable;
+            return;
+        }
+        if ("1000".equals(mode) || "1002".equals(mode) || "1003".equals(mode)
+                || "1005".equals(mode) || "1006".equals(mode) || "1015".equals(mode)
+                || "1016".equals(mode)) {
+            // Mouse tracking/reporting modes: this client has no mouse-event reporting
+            // path, so acknowledge the query is understood by consuming it silently
+            // rather than falling through to the same no-op default as a genuinely
+            // unrecognized DEC private mode.
             return;
         }
         if ("47".equals(mode) || "1047".equals(mode) || "1049".equals(mode)) {
@@ -433,6 +569,68 @@ final class TerminalScreen {
             active.copyRows(scrollTop, scrollBottom - 1, 1);
             active.clearRow(scrollTop);
         }
+    }
+
+    // CSI L (IL): insert blank lines at the cursor row, shifting rows below it
+    // down within the active scroll region. Rows pushed past scrollBottom are
+    // dropped. A no-op if the cursor sits outside the scroll region.
+    private void insertLines(int count) {
+        if (row < scrollTop || row > scrollBottom) {
+            return;
+        }
+        int n = Math.min(count, scrollBottom - row + 1);
+        if (row + n <= scrollBottom) {
+            active.copyRows(row, scrollBottom - n, n);
+        }
+        for (int r = row; r < row + n; r++) {
+            active.clearRow(r);
+        }
+    }
+
+    // CSI M (DL): delete lines starting at the cursor row, shifting rows below
+    // it up within the active scroll region and pulling in blank rows at
+    // scrollBottom. A no-op if the cursor sits outside the scroll region.
+    private void deleteLines(int count) {
+        if (row < scrollTop || row > scrollBottom) {
+            return;
+        }
+        int n = Math.min(count, scrollBottom - row + 1);
+        if (row + n <= scrollBottom) {
+            active.copyRows(row + n, scrollBottom, -n);
+        }
+        for (int r = scrollBottom - n + 1; r <= scrollBottom; r++) {
+            active.clearRow(r);
+        }
+    }
+
+    // CSI @ (ICH): insert blank cells at the cursor column, shifting the rest
+    // of the row right. Cells pushed past the last column are dropped.
+    private void insertChars(int count) {
+        int n = Math.min(count, active.cols - col);
+        if (n <= 0) {
+            return;
+        }
+        active.insertChars(row, col, n);
+    }
+
+    // CSI P (DCH): delete cells at the cursor column, shifting the rest of the
+    // row left and filling the vacated cells at the row end with blanks.
+    private void deleteChars(int count) {
+        int n = Math.min(count, active.cols - col);
+        if (n <= 0) {
+            return;
+        }
+        active.deleteChars(row, col, n);
+    }
+
+    // CSI X (ECH): blank cells starting at the cursor column in place, without
+    // shifting any other cells on the row.
+    private void eraseChars(int count) {
+        int n = Math.min(count, active.cols - col);
+        if (n <= 0) {
+            return;
+        }
+        active.eraseChars(row, col, n);
     }
 
     private void setCell(int targetRow, int targetCol, char ch, boolean bold,
@@ -652,6 +850,45 @@ final class TerminalScreen {
                 backgrounds[r + delta] = backgrounds[r].clone();
             }
             clearRow(fromStart);
+        }
+
+        // Shift cells [startCol, cols-1-count] right by count, dropping cells
+        // that fall off the right edge, then blank the count cells starting at
+        // startCol that were vacated by the shift.
+        private void insertChars(int targetRow, int startCol, int count) {
+            for (int c = cols - 1; c >= startCol + count; c--) {
+                chars[targetRow][c] = chars[targetRow][c - count];
+                flags[targetRow][c] = flags[targetRow][c - count];
+                foregrounds[targetRow][c] = foregrounds[targetRow][c - count];
+                backgrounds[targetRow][c] = backgrounds[targetRow][c - count];
+            }
+            blankCells(targetRow, startCol, Math.min(cols, startCol + count));
+        }
+
+        // Shift cells [startCol+count, cols-1] left by count, then blank the
+        // count cells at the end of the row that were vacated by the shift.
+        private void deleteChars(int targetRow, int startCol, int count) {
+            for (int c = startCol; c < cols - count; c++) {
+                chars[targetRow][c] = chars[targetRow][c + count];
+                flags[targetRow][c] = flags[targetRow][c + count];
+                foregrounds[targetRow][c] = foregrounds[targetRow][c + count];
+                backgrounds[targetRow][c] = backgrounds[targetRow][c + count];
+            }
+            blankCells(targetRow, Math.max(startCol, cols - count), cols);
+        }
+
+        // Blank count cells starting at startCol in place, without shifting.
+        private void eraseChars(int targetRow, int startCol, int count) {
+            blankCells(targetRow, startCol, Math.min(cols, startCol + count));
+        }
+
+        private void blankCells(int targetRow, int fromCol, int toColExclusive) {
+            for (int c = fromCol; c < toColExclusive; c++) {
+                chars[targetRow][c] = ' ';
+                flags[targetRow][c] = 0;
+                foregrounds[targetRow][c] = NO_COLOR;
+                backgrounds[targetRow][c] = NO_COLOR;
+            }
         }
 
         private int lastNonBlankRow() {
