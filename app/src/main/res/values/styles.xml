@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Shared by the special-key toolbar (ESC/TAB/CTRL+C/...) and the
+      CONNECT/DISCONNECT button (issues #58, #60): a shorter min-height and
+      tighter vertical padding than the platform's buttonStyleSmall default,
+      reclaiming chrome height for the terminal viewport below.
+    -->
+    <style name="KeyToolbarButton" parent="android:Widget.Material.Button.Small">
+        <item name="android:minHeight">@dimen/chrome_button_min_height</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingTop">@dimen/chrome_button_vertical_padding</item>
+        <item name="android:paddingBottom">@dimen/chrome_button_vertical_padding</item>
+    </style>
+</resources>

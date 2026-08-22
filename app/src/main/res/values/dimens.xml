@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compact chrome dimensions (issues #58-#60): the special-key toolbar, the
+      connection-status bar, and the CONNECT/DISCONNECT button all sit above the
+      terminal viewport and eat into its available height on every layout pass.
+      The platform's default button/text padding is generous enough for
+      touch-friendly forms but wastes vertical space here, where every row of
+      chrome is a row the terminal grid cannot use. These values trade a little
+      of that default breathing room for more visible terminal rows.
+    -->
+    <dimen name="chrome_button_min_height">32dp</dimen>
+    <dimen name="chrome_button_vertical_padding">4dp</dimen>
+    <dimen name="status_bar_padding">4dp</dimen>
+</resources>

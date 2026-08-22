@@ -138,7 +138,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:padding="8dp"
+            android:padding="@dimen/status_bar_padding"
             android:background="@color/status_bar"
             android:textColor="@color/status_text"
             android:text="@string/status_disconnected"
@@ -147,6 +147,7 @@
 
         <Button
             android:id="@+id/btnConnect"
+            style="@style/KeyToolbarButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"

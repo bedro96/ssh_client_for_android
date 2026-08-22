@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tablet layout keeps a touch more breathing room than the phone layout,
+         but still well below the original 12dp default (see issue #59). -->
+    <dimen name="status_bar_padding">6dp</dimen>
+</resources>
