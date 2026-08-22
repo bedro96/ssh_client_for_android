@@ -525,12 +525,53 @@ final class TerminalScreen {
             lineFeed(false);
             wrapPending = false;
         }
+        int width = isWideChar(ch) ? 2 : 1;
+        if (width == 2 && col == active.cols - 1) {
+            // A double-width glyph (CJK ideograph, Hangul syllable, ...) never fits in a
+            // single trailing column: defer it to the next row instead of splitting it
+            // across the wrap boundary, matching how real terminals (and tmux's own
+            // column bookkeeping) treat East Asian Wide characters.
+            col = 0;
+            lineFeed(false);
+        }
         setCell(row, col, ch, bold, foregroundRgb, backgroundRgb);
-        if (col == active.cols - 1) {
+        if (width == 2 && col + 1 < active.cols) {
+            // Blank the glyph's continuation cell so stale content from a previous,
+            // differently-sized write can never leak through the second column of a
+            // double-width character.
+            setCell(row, col + 1, ' ', false, null, null);
+        }
+        int nextCol = col + width;
+        if (nextCol >= active.cols) {
+            col = active.cols - 1;
             wrapPending = true;
         } else {
-            col++;
+            col = nextCol;
         }
+    }
+
+    // Unicode East Asian Width ranges rendered as double-width by real terminals (and
+    // assumed double-width by remote programs like tmux when they compute cursor/column
+    // positions). Without this, our column bookkeeping silently drifts one column behind
+    // the remote's for every CJK/Hangul character written, so anything drawn immediately
+    // afterwards without an intervening absolute cursor move - e.g. a tmux vertical
+    // pane-divider glyph continuing straight on from a neighboring pane's redrawn row -
+    // lands at the wrong column (see issue #61). Restricted to the BMP: this class already
+    // operates on individual UTF-16 chars, so supplementary-plane wide glyphs (rare in
+    // terminal use) are out of scope.
+    private static boolean isWideChar(char ch) {
+        int c = ch;
+        return (c >= 0x1100 && c <= 0x115F)   // Hangul Jamo
+                || (c >= 0x2E80 && c <= 0x303E)  // CJK Radicals/Kangxi, CJK symbols & punctuation
+                || (c >= 0x3041 && c <= 0x33FF)  // Hiragana..CJK Compatibility
+                || (c >= 0x3400 && c <= 0x4DBF)  // CJK Unified Ideographs Extension A
+                || (c >= 0x4E00 && c <= 0x9FFF)  // CJK Unified Ideographs
+                || (c >= 0xA000 && c <= 0xA4CF)  // Yi Syllables/Radicals
+                || (c >= 0xAC00 && c <= 0xD7A3)  // Hangul Syllables
+                || (c >= 0xF900 && c <= 0xFAFF)  // CJK Compatibility Ideographs
+                || (c >= 0xFE30 && c <= 0xFE4F)  // CJK Compatibility Forms
+                || (c >= 0xFF00 && c <= 0xFF60)  // Fullwidth Forms
+                || (c >= 0xFFE0 && c <= 0xFFE6); // Fullwidth Signs
     }
 
     private void lineFeed(boolean carriageReturn) {

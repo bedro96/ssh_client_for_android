@@ -53,6 +53,8 @@ javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalAnsiProcessor.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalInputHandler.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalGeometry.java" \
+  "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/TerminalCursorRenderer.java" \
+  "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/RenderScheduler.java" \
   "${ROOT_DIR}/app/src/main/java/com/bedro96/sshclient/SshKeyAuth.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshKeyAuthTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalBufferTest.java" \
@@ -60,9 +62,12 @@ javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalAnsiProcessorTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalInputHandlerTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalGeometryTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/TerminalCursorRendererTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/RenderSchedulerTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshReaderConfigTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/ChromeLayoutCompactnessTest.java" \
-  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshResizeRaceTest.java"
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshResizeRaceTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/ConfigChangeGeometryTest.java"
 
 echo "Running SshKeyAuthTest (multi-release disabled to simulate Android)..."
 java -Djdk.util.jar.enableMultiRelease=false \
@@ -92,6 +97,14 @@ echo "Running TerminalGeometryTest..."
 java -classpath "${BUILD_DIR}:${CP}" \
   com.bedro96.sshclient.TerminalGeometryTest
 
+echo "Running TerminalCursorRendererTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  com.bedro96.sshclient.TerminalCursorRendererTest
+
+echo "Running RenderSchedulerTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  com.bedro96.sshclient.RenderSchedulerTest
+
 echo "Running SshReaderConfigTest..."
 java -classpath "${BUILD_DIR}:${CP}" \
   -Dssh.reader.config.test.repoRoot="${ROOT_DIR}" \
@@ -106,3 +119,8 @@ echo "Running SshResizeRaceTest..."
 java -classpath "${BUILD_DIR}:${CP}" \
   -Dssh.resize.race.test.repoRoot="${ROOT_DIR}" \
   com.bedro96.sshclient.SshResizeRaceTest
+
+echo "Running ConfigChangeGeometryTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  -Dconfig.change.geometry.test.repoRoot="${ROOT_DIR}" \
+  com.bedro96.sshclient.ConfigChangeGeometryTest

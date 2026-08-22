@@ -85,6 +85,34 @@ public final class MainActivity extends Activity implements SshConnectionService
 
     private final Handler ui = new Handler(Looper.getMainLooper());
 
+    /**
+     * Coalesced screen-refresh tick period (issue #64): incoming SSH output is batched and
+     * repainted at most once per this many milliseconds, instead of synchronously re-rendering
+     * on every single incoming read chunk (which, in a busy session, can be many times a
+     * second and looks jittery). 16ms (~60Hz) is exactly half the period of a conservative
+     * ~33ms (~30Hz) terminal-refresh baseline, so the terminal repaints twice as often and
+     * feels smoother/more natural. This only throttles the OUTGOING-to-screen render path --
+     * it has no effect on input latency, since typed keys/toolbar presses are sent to the
+     * remote immediately via a separate path that never goes through this scheduler.
+     */
+    private static final long RENDER_PERIOD_MILLIS = 16L;
+
+    private final RenderScheduler renderScheduler = new RenderScheduler(
+            new RenderScheduler.Poster() {
+                @Override public void postDelayed(Runnable runnable, long delayMillis) {
+                    ui.postDelayed(runnable, delayMillis);
+                }
+            },
+            RENDER_PERIOD_MILLIS,
+            new Runnable() {
+                @Override public void run() {
+                    renderTermBuffer();
+                    scrollOutput.post(new Runnable() {
+                        @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
+                    });
+                }
+            });
+
     private SshConnectionService sshService;
     private boolean boundToService;
 
@@ -178,6 +206,32 @@ public final class MainActivity extends Activity implements SshConnectionService
             boundToService = false;
         }
         super.onDestroy();
+    }
+
+    /**
+     * {@code android:configChanges="orientation|screenSize|keyboardHidden"} in the
+     * manifest keeps this Activity alive (rather than being torn down and
+     * recreated) across a window resize, so the live SSH session survives
+     * rotation, split-screen, freeform drag-resize and tablet/foldable window
+     * changes. But that also means Android routes every one of those changes
+     * here instead of through a fresh onCreate(), and the already-inflated
+     * terminal viewport is not automatically re-measured for the new window
+     * bounds: {@link #wireTerminalViewport()}'s OnLayoutChangeListener alone can
+     * miss (or badly lag behind) a resize that arrives as a configuration
+     * change without its own bounds-changed layout pass on
+     * txtOutput/scrollOutput, leaving the terminal grid stuck at whatever
+     * row/column count fit the previous, smaller window (issue #62). Forcing a
+     * geometry recompute here — after the current layout pass settles — makes
+     * every configuration change also re-fit the terminal to the newly
+     * available height, regardless of whether the layout listener happens to
+     * fire in time on its own.
+     */
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        txtOutput.post(new Runnable() {
+            @Override public void run() { updateTerminalGeometry(); }
+        });
     }
 
     private void requestNotificationPermissionIfNeeded() {
@@ -436,10 +490,11 @@ public final class MainActivity extends Activity implements SshConnectionService
     }
 
     @Override public void onScreenUpdated() {
-        renderTermBuffer();
-        scrollOutput.post(new Runnable() {
-            @Override public void run() { scrollOutput.fullScroll(View.FOCUS_DOWN); }
-        });
+        // Coalesced onto a fixed ~16ms tick (issue #64) rather than rendering synchronously for
+        // every single incoming SSH read chunk: if a render pass is already pending, this is a
+        // no-op -- the pending pass re-reads the authoritative TerminalScreen buffer fresh when
+        // it fires, so no content is lost even though most bursts of this callback do nothing.
+        renderScheduler.onOutputAvailable();
     }
 
     @Override public void onSendFailed(String detail) {
@@ -528,9 +583,21 @@ public final class MainActivity extends Activity implements SshConnectionService
     }
 
     /**
-     * Renders the authoritative terminal buffer into the output view, placing the
-     * caret (Android's native blinking cursor) at the tracked terminal cursor so
-     * interactive CLIs that redraw a line in place show a cursor in the right spot.
+     * Renders the authoritative terminal buffer into the output view, drawing the terminal's
+     * own cursor-block highlight at the tracked cursor position instead of relying on
+     * Android's native {@code EditText} caret.
+     *
+     * <p>This view previously used {@code txtOutput.setCursorVisible(...)}/{@code setSelection}
+     * to represent the terminal cursor, but that native caret is driven by an internal
+     * {@code Handler}-based blink timer that is sensitive to {@code setText()}/selection churn.
+     * Since this method calls {@code setText()} on every incoming output chunk (many times a
+     * second in a busy session), the native caret's blink phase could get stuck "off" and the
+     * cursor would never reliably reappear once the user moved it (issue #63). Rendering the
+     * cursor as an explicit span on the same {@code SpannableStringBuilder} this method already
+     * builds for bold/color runs guarantees visibility regardless of output frequency, and it
+     * still respects {@code snapshot.cursorVisible} (hidden when the remote program issues
+     * {@code \e[?25l}). See {@link TerminalCursorRenderer} for the (host-JVM-testable) placement
+     * logic.
      */
     private void renderTermBuffer() {
         if (sshService == null) { return; }
@@ -551,10 +618,29 @@ public final class MainActivity extends Activity implements SshConnectionService
                         run.start, run.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
+
+        // Preserve the pre-fix behavior of also hiding the cursor while the output view is
+        // disabled (e.g. right after disconnect, where a final in-flight screen update can
+        // still land before sshService is cleared) -- not just when the remote program hides
+        // it via cursorVisible.
+        TerminalCursorRenderer.Plan cursorPlan = TerminalCursorRenderer.plan(
+                snapshot.text, snapshot.cursorIndex, snapshot.cursorVisible && txtOutput.isEnabled());
+        if (cursorPlan.padInsertIndex >= 0) {
+            rendered.insert(cursorPlan.padInsertIndex, " ");
+        }
+        if (cursorPlan.highlightEnd > cursorPlan.highlightStart) {
+            int cursorFg = getResources().getColor(R.color.terminal_bg, getTheme());
+            int cursorBg = getResources().getColor(R.color.terminal_fg, getTheme());
+            rendered.setSpan(new ForegroundColorSpan(cursorFg),
+                    cursorPlan.highlightStart, cursorPlan.highlightEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            rendered.setSpan(new BackgroundColorSpan(cursorBg),
+                    cursorPlan.highlightStart, cursorPlan.highlightEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+
         suppressTextWatcher = true;
         txtOutput.setText(rendered, TextView.BufferType.SPANNABLE);
         txtOutput.setSelection(Math.max(0, Math.min(snapshot.cursorIndex, txtOutput.getText().length())));
-        txtOutput.setCursorVisible(snapshot.cursorVisible && txtOutput.isEnabled());
+        txtOutput.setCursorVisible(false);
         suppressTextWatcher = false;
     }
 

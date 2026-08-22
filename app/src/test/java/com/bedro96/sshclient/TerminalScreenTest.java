@@ -11,6 +11,8 @@ public final class TerminalScreenTest {
     private TerminalScreenTest() { }
 
     public static void main(String[] args) {
+        testWideCjkCharactersAdvanceCursorByTwoColumns();
+        testWideCjkCharacterAtLastColumnDefersWrapInsteadOfSplitting();
         testAutowrapAndCoordinateClamping();
         testCursorAddressingAndSaveRestore();
         testEraseLineVariants();
@@ -53,6 +55,58 @@ public final class TerminalScreenTest {
         testCombinedDecPrivateModesAreAllApplied();
         testReplyWithoutSinkConfiguredDoesNotThrow();
         System.out.println("TERMINAL SCREEN TESTS PASSED");
+    }
+
+    // Reproduces the exact byte pattern captured from a real tmux session: a
+    // pane row is redrawn as one continuous write - "ESC[H" (home) followed
+    // directly by the pane's text and then, with NO intervening cursor
+    // reposition, the vertical pane-divider glyph - e.g. "ESC[H" + Korean
+    // text + "│" (see docs/EMULATOR_VALIDATION.md's tmux-pane-utf8.sh and the
+    // "main 000476 │ ..." continuation-write pattern observed live on the
+    // wire). tmux computes that continuation column using each glyph's real
+    // Unicode East Asian Width (2 columns for Hangul syllables), so the
+    // client's cursor must advance by the same amount or every write that
+    // follows a wide character inline lands one or more columns short of
+    // where the remote terminal/tmux believes the cursor to be - visibly
+    // misplacing whatever comes next on that row (a pane divider, more pane
+    // content, etc).
+    private static void testWideCjkCharactersAdvanceCursorByTwoColumns() {
+        TerminalScreen screen = new TerminalScreen(4, 20);
+        RecordingReplySink sink = new RecordingReplySink();
+        screen.setReplySink(sink);
+        // Two Hangul syllables (U+D55C U+AE00, "한글") are double-width; a
+        // correct terminal leaves the cursor 4 columns to the right of them,
+        // not 2.
+        screen.append(ESC + "[H" + "\uD55C\uAE00" + ESC + "[6n");
+        assertEquals(ESC + "[1;5R", sink.repliesAsStrings().get(0),
+                "cursor should sit at column 5 (1-based) after two double-width Hangul "
+                        + "syllables, matching tmux's own East Asian Width bookkeeping");
+
+        // The divider glyph itself is single-width and must land immediately
+        // after those two double-width characters, not two columns early.
+        screen.append("\u2502" + ESC + "[6n");
+        assertEquals(ESC + "[1;6R", sink.repliesAsStrings().get(1),
+                "a single-width divider written right after wide CJK text should land at "
+                        + "the column following the wide characters' full display width");
+    }
+
+    // Same continuation-write pattern as above, but exercised at the exact
+    // right edge of the row: a double-width character that would only
+    // half-fit in the last column must defer (autowrap) rather than split
+    // across the wrap boundary, and content written immediately afterwards
+    // must land on the next row - not spliced into the column the wide
+    // character was denied.
+    private static void testWideCjkCharacterAtLastColumnDefersWrapInsteadOfSplitting() {
+        TerminalScreen screen = new TerminalScreen(3, 5);
+        // Column budget: col(0)='한'(2 cols, 0-1), col(1)='글'(2 cols, 2-3),
+        // col(2)='│'(1 col, col 4) - exactly fills all 5 columns with no
+        // spare column, so the next write must wrap to row 2.
+        screen.append("\uD55C\uAE00" + "\u2502" + "X");
+        assertEquals("한 글 │\nX", screen.snapshot(200_000).text,
+                "a full row of double-width CJK text plus a single-width divider should "
+                        + "exactly fill the row (each wide glyph followed by its blanked "
+                        + "continuation cell) and defer the next character to the following "
+                        + "line instead of splicing it into the same row");
     }
 
     private static void testAutowrapAndCoordinateClamping() {
