@@ -3,4 +3,9 @@
     <!-- Tablet layout keeps a touch more breathing room than the phone layout,
          but still well below the original 12dp default (see issue #59). -->
     <dimen name="status_bar_padding">6dp</dimen>
+
+    <!-- Tablet root bottom padding (issue #67): a touch more breathing room
+         than the phone layout, but still well below the original 24dp
+         uniform padding. -->
+    <dimen name="root_bottom_padding">4dp</dimen>
 </resources>

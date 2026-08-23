@@ -66,6 +66,7 @@ javac -encoding UTF-8 -classpath "${CP}" -d "${BUILD_DIR}" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/RenderSchedulerTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshReaderConfigTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/ChromeLayoutCompactnessTest.java" \
+  "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/RootPaddingCompactnessTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/SshResizeRaceTest.java" \
   "${ROOT_DIR}/app/src/test/java/com/bedro96/sshclient/ConfigChangeGeometryTest.java"
 
@@ -114,6 +115,11 @@ echo "Running ChromeLayoutCompactnessTest..."
 java -classpath "${BUILD_DIR}:${CP}" \
   -Dchrome.layout.test.repoRoot="${ROOT_DIR}" \
   com.bedro96.sshclient.ChromeLayoutCompactnessTest
+
+echo "Running RootPaddingCompactnessTest..."
+java -classpath "${BUILD_DIR}:${CP}" \
+  -Droot.padding.test.repoRoot="${ROOT_DIR}" \
+  com.bedro96.sshclient.RootPaddingCompactnessTest
 
 echo "Running SshResizeRaceTest..."
 java -classpath "${BUILD_DIR}:${CP}" \

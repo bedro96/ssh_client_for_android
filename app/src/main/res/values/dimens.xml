@@ -12,4 +12,15 @@
     <dimen name="chrome_button_min_height">32dp</dimen>
     <dimen name="chrome_button_vertical_padding">4dp</dimen>
     <dimen name="status_bar_padding">4dp</dimen>
+
+    <!--
+      Root layout bottom padding (issue #67): the terminal ScrollView
+      (scrollOutput) is the last child with layout_height="0dp"/
+      layout_weight="1", so it is the only view that grows/shrinks to fill
+      remaining space. The root's bottom padding therefore sits below the
+      terminal as pure dead space that could instead be extra terminal rows.
+      Top/start/end padding is left at the original 12dp to keep framing the
+      connection form and status bar.
+    -->
+    <dimen name="root_bottom_padding">2dp</dimen>
 </resources>
