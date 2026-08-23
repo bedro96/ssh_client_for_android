@@ -200,6 +200,7 @@ public final class MainActivity extends Activity implements SshConnectionService
 
     @Override
     protected void onDestroy() {
+        renderScheduler.stop();
         if (boundToService) {
             if (sshService != null) { sshService.setListener(null); }
             unbindService(serviceConnection);
@@ -465,6 +466,12 @@ public final class MainActivity extends Activity implements SshConnectionService
         txtOutput.setEnabled(true);
         txtOutput.requestFocus();
         updateTerminalGeometry();
+        // Issue #65: guarantee the whole screen repaints at least ~60 times/sec (well over the
+        // required 10Hz floor) for as long as this session is connected, independent of whether
+        // any specific "output arrived" notification fires for a given region -- e.g. an idle
+        // pane in a multi-pane tmux layout that would otherwise never get a repaint until the
+        // user manually forced tmux to redraw it.
+        renderScheduler.start();
     }
 
     @Override public void onConnectFailed(String detail) {
@@ -476,6 +483,7 @@ public final class MainActivity extends Activity implements SshConnectionService
     }
 
     @Override public void onDisconnected() {
+        renderScheduler.stop();
         setConnectionInputsEnabled(true);
         btnConnect.setText(R.string.action_connect);
         btnConnect.setEnabled(true);
@@ -486,6 +494,7 @@ public final class MainActivity extends Activity implements SshConnectionService
     }
 
     @Override public void onRemoteShellClosed() {
+        renderScheduler.stop();
         setStatus("Remote shell closed");
     }
 

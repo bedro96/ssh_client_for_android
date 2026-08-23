@@ -25,6 +25,14 @@ public final class RenderSchedulerTest {
         testSchedulesAtTheConfiguredPeriod();
         testConstructorRejectsNullPosterOrRenderAction();
         testConstructorRejectsNegativePeriod();
+        testStartSchedulesAContinuousHeartbeatWithoutAnyOutputNotifications();
+        testHeartbeatKeepsRenderingOnEveryTickWithNoOutputAtAll();
+        testHeartbeatTickIsAtTheConfiguredPeriodEveryTime();
+        testStopEndsTheHeartbeatSoNoFurtherTicksAreScheduled();
+        testStartIsIdempotentWhileAlreadyRunning();
+        testStartAfterStopResumesTheHeartbeat();
+        testOnOutputAvailableIsANoOpWhileTheHeartbeatIsRunning();
+        testOnOutputAvailableResumesItsOwnSchedulingAfterTheHeartbeatStops();
         System.out.println("RENDER SCHEDULER TESTS PASSED");
     }
 
@@ -156,6 +164,137 @@ public final class RenderSchedulerTest {
             threw = true;
         }
         assertTrue(threw, "constructor must reject a negative period");
+    }
+
+    // --- issue #65: continuous >=10Hz repaint heartbeat, independent of onOutputAvailable() ---
+
+    private static void testOnOutputAvailableIsANoOpWhileTheHeartbeatIsRunning() {
+        // Once the heartbeat (issue #65) is running, it already guarantees a render within one
+        // tick unconditionally, so onOutputAvailable() scheduling its own separate render on top
+        // would just double the effective repaint rate for no benefit -- confirmed as a real
+        // finding in rubber-duck review of this fix.
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+        boolean scheduledFresh = scheduler.onOutputAvailable();
+
+        assertTrue(!scheduledFresh, "onOutputAvailable() must be a no-op while the heartbeat is already running");
+        assertEquals(1, poster.postCount,
+                "only the heartbeat's own tick may be posted; onOutputAvailable() must not add a second one");
+    }
+
+    private static void testOnOutputAvailableResumesItsOwnSchedulingAfterTheHeartbeatStops() {
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+        scheduler.stop();
+        boolean scheduledFresh = scheduler.onOutputAvailable();
+
+        assertTrue(scheduledFresh,
+                "once the heartbeat is stopped (e.g. before any session has connected), onOutputAvailable() "
+                        + "must resume its own on-demand coalescing so pre-connect local messages still render");
+    }
+
+    private static void testStartSchedulesAContinuousHeartbeatWithoutAnyOutputNotifications() {
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+
+        assertEquals(1, poster.postCount, "start() must schedule the first heartbeat tick immediately");
+        assertEquals(0, renderCount.count, "the render action must not run until the posted tick fires");
+    }
+
+    private static void testHeartbeatKeepsRenderingOnEveryTickWithNoOutputAtAll() {
+        // This is the actual fix for issue #65: a multi-pane tmux session where one pane never
+        // triggers onOutputAvailable() must still keep getting repainted, because the heartbeat
+        // re-renders unconditionally on every tick, not only in response to notifications.
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+        for (int tick = 1; tick <= 5; tick++) {
+            poster.fireAll();
+            assertEquals(tick, renderCount.count,
+                    "tick " + tick + ": the render action must run exactly once per elapsed heartbeat tick, "
+                            + "with zero onOutputAvailable() calls in between");
+        }
+        assertEquals(6, poster.postCount,
+                "start() posts the first tick, then each of the 5 fired ticks must self-perpetuate "
+                        + "exactly one more (1 initial + 5 self-scheduled = 6)");
+    }
+
+    private static void testHeartbeatTickIsAtTheConfiguredPeriodEveryTime() {
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        long period = 16L;
+        RenderScheduler scheduler = new RenderScheduler(poster, period, renderCount);
+
+        scheduler.start();
+        poster.fireAll();
+        poster.fireAll();
+        poster.fireAll();
+
+        for (long delay : poster.delaysMillis) {
+            assertEquals(period, delay,
+                    "issue #65 requires every self-perpetuating heartbeat tick to use the configured "
+                            + "period (16ms in production, well under the 100ms/10Hz floor the issue requires)");
+        }
+    }
+
+    private static void testStopEndsTheHeartbeatSoNoFurtherTicksAreScheduled() {
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+        poster.fireAll();
+        poster.fireAll();
+        scheduler.stop();
+        poster.fireAll(); // nothing pending; must be a no-op
+
+        int postCountAtStop = poster.postCount;
+        int renderCountAtStop = renderCount.count;
+        poster.fireAll();
+        poster.fireAll();
+
+        assertEquals(postCountAtStop, poster.postCount,
+                "stop() must prevent any further heartbeat ticks from being scheduled");
+        assertEquals(renderCountAtStop, renderCount.count,
+                "stop() must prevent any further render passes from running");
+    }
+
+    private static void testStartIsIdempotentWhileAlreadyRunning() {
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+        scheduler.start();
+        scheduler.start();
+
+        assertEquals(1, poster.postCount,
+                "calling start() while already running must not schedule extra, overlapping heartbeat loops");
+    }
+
+    private static void testStartAfterStopResumesTheHeartbeat() {
+        FakePoster poster = new FakePoster();
+        Counter renderCount = new Counter();
+        RenderScheduler scheduler = new RenderScheduler(poster, 16L, renderCount);
+
+        scheduler.start();
+        poster.fireAll();
+        scheduler.stop();
+        scheduler.start();
+        poster.fireAll();
+
+        assertEquals(2, renderCount.count, "restarting after a stop() must resume rendering on each tick");
     }
 
     /** Fake {@link RenderScheduler.Poster} that records and can synchronously fire posted work. */

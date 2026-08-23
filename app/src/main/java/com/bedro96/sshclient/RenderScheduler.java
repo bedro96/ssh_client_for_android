@@ -2,7 +2,8 @@ package com.bedro96.sshclient;
 
 /**
  * Coalesces bursts of "new output arrived" notifications onto a single fixed-rate render
- * pass per tick (issue #64).
+ * pass per tick (issue #64), and separately offers a continuous, unconditional repaint
+ * heartbeat (issue #65) as a robustness backstop against any missed/delayed notification.
  *
  * <p>Before this existed, {@code SshConnectionService}'s reader thread posted
  * {@code notifyScreenUpdated()} to the UI thread for literally every incoming SSH read chunk
@@ -46,6 +47,17 @@ final class RenderScheduler {
     private final Object lock = new Object();
     private boolean scheduled;
 
+    /** Guards {@link #heartbeatRunning}/{@link #heartbeatGeneration}; separate from {@link #lock}
+     * since the heartbeat and the on-demand coalescing scheme are independent mechanisms that
+     * may be used together. */
+    private final Object heartbeatLock = new Object();
+    private boolean heartbeatRunning;
+    /** Incremented on every {@link #start()}. Lets an in-flight tick posted by a previous
+     * generation (e.g. one already posted right before a stop()+start() pair) detect that it is
+     * stale and do nothing, instead of "reviving" and running alongside the new generation's own
+     * tick chain -- which would otherwise silently double the effective repaint rate. */
+    private long heartbeatGeneration;
+
     RenderScheduler(Poster poster, long periodMillis, Runnable renderAction) {
         if (poster == null || renderAction == null) {
             throw new NullPointerException("poster and renderAction must not be null");
@@ -61,16 +73,27 @@ final class RenderScheduler {
     /**
      * Called whenever new output has arrived and the screen may need repainting.
      *
-     * <p>If a render pass is already pending, this is a no-op (the pending pass will pick up
-     * this update's content -- and anything else that arrives before it fires -- because
-     * {@code renderAction} always re-reads the current, authoritative state rather than a
-     * snapshot captured at schedule time). Otherwise, this schedules exactly one render pass to
-     * run after {@code periodMillis}.
+     * <p>If the continuous heartbeat (see {@link #start()}) is currently running, this is
+     * always a no-op: the heartbeat already guarantees a render within one tick unconditionally,
+     * so scheduling a second, separate render here would just double the effective repaint rate
+     * for no benefit (found in rubber-duck review of issue #65). Otherwise -- e.g. for a
+     * locally-generated message shown before any session has connected and started the
+     * heartbeat -- this falls back to its original on-demand coalescing: if a render pass is
+     * already pending, this is a no-op (the pending pass will pick up this update's content --
+     * and anything else that arrives before it fires -- because {@code renderAction} always
+     * re-reads the current, authoritative state rather than a snapshot captured at schedule
+     * time); otherwise it schedules exactly one render pass to run after {@code periodMillis}.
      *
-     * @return {@code true} if this call scheduled a fresh render pass, {@code false} if one was
-     *         already pending and this call was coalesced into it.
+     * @return {@code true} if this call scheduled a fresh render pass, {@code false} if the
+     *         heartbeat is already covering repaints, or a render was already pending and this
+     *         call was coalesced into it.
      */
     boolean onOutputAvailable() {
+        synchronized (heartbeatLock) {
+            if (heartbeatRunning) {
+                return false;
+            }
+        }
         synchronized (lock) {
             if (scheduled) {
                 return false;
@@ -86,6 +109,68 @@ final class RenderScheduler {
             }
         }, periodMillis);
         return true;
+    }
+
+    /**
+     * Starts a continuous, self-perpetuating repaint heartbeat: {@code renderAction} runs
+     * unconditionally every {@code periodMillis} for as long as the heartbeat is running,
+     * independent of {@link #onOutputAvailable()} (issue #65). This is the guarantee that the
+     * on-demand coalescing scheme above cannot make on its own: if any particular "output
+     * arrived" notification is ever missed, delayed, or simply never fires for some region of
+     * the terminal (e.g. an idle tmux pane in a multi-pane layout), the heartbeat still
+     * repaints the whole screen from the terminal model's current, authoritative state at a
+     * fixed cadence, so nothing can go stale indefinitely.
+     *
+     * <p>Idempotent: calling this while already running has no effect (does not start a second,
+     * overlapping tick loop).
+     */
+    void start() {
+        long generation;
+        synchronized (heartbeatLock) {
+            if (heartbeatRunning) {
+                return;
+            }
+            heartbeatRunning = true;
+            generation = ++heartbeatGeneration;
+        }
+        scheduleHeartbeatTick(generation);
+    }
+
+    /**
+     * Stops the heartbeat. A tick already posted before this call may still fire once (it was
+     * already handed to {@link Poster}), but it is tagged with the generation active when it was
+     * scheduled and will find that generation stale on arrival, so it neither runs
+     * {@code renderAction} nor schedules a further tick -- even if {@link #start()} is called
+     * again before that stale tick fires.
+     */
+    void stop() {
+        synchronized (heartbeatLock) {
+            heartbeatRunning = false;
+        }
+    }
+
+    private void scheduleHeartbeatTick(final long generation) {
+        poster.postDelayed(new Runnable() {
+            @Override public void run() {
+                boolean stillCurrent;
+                synchronized (heartbeatLock) {
+                    stillCurrent = heartbeatRunning && generation == heartbeatGeneration;
+                }
+                if (!stillCurrent) {
+                    return;
+                }
+                renderAction.run();
+                // Re-check after running renderAction in case stop()/start() was called
+                // re-entrantly from within it; schedule the next tick only if this generation
+                // is still the current one.
+                synchronized (heartbeatLock) {
+                    stillCurrent = heartbeatRunning && generation == heartbeatGeneration;
+                }
+                if (stillCurrent) {
+                    scheduleHeartbeatTick(generation);
+                }
+            }
+        }, periodMillis);
     }
 
     /** Test/diagnostic hook: whether a render pass is currently pending. */
