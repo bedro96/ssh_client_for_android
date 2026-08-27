@@ -14,7 +14,7 @@
     <dimen name="status_bar_padding">4dp</dimen>
 
     <!--
-      Root layout bottom padding (issue #67): the terminal ScrollView
+      Root layout bottom padding (issue #66): the terminal ScrollView
       (scrollOutput) is the last child with layout_height="0dp"/
       layout_weight="1", so it is the only view that grows/shrinks to fill
       remaining space. The root's bottom padding therefore sits below the
