@@ -9,7 +9,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Guards the bottom padding of the root layout (issue #67): the terminal
+ * Guards the bottom padding of the root layout (issue #66): the terminal
  * {@code scrollOutput} ScrollView is the last child with
  * {@code layout_height="0dp"}/{@code layout_weight="1"}, so it is the only
  * view that grows/shrinks to fill remaining space in the root LinearLayout.
@@ -73,6 +73,10 @@ public final class RootPaddingCompactnessTest {
                     + "paddingEnd/paddingBottom so the bottom edge can shrink independently: " + rootTag);
         }
         String bottomValue = requireAttr(rootTag, "android:paddingBottom", layoutPath);
+        if (!"@dimen/root_bottom_padding".equals(bottomValue)) {
+            throw new AssertionError("FAILED: " + layoutPath + " root paddingBottom must be driven by "
+                    + "@dimen/root_bottom_padding, got: " + bottomValue);
+        }
         int paddingDp = resolveDp(bottomValue, dimensPath);
         if (paddingDp > maxDp) {
             throw new AssertionError("FAILED: " + layoutPath + " root paddingBottom is " + paddingDp
